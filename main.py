@@ -1,6 +1,8 @@
 import torchvision
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import torch
+
+from typing import Tuple, Any
 
 import numpy as np
 from sklearn.cluster import KMeans
@@ -65,6 +67,7 @@ class YOLOLayer(torch.nn.Module):
         self.anchors = anchors
 
     def forward(self, input):
+        # why not adjusting the anchor boxes?
         batch_size = input.shape[0]
         grid_size = input.shape[2]
 
@@ -116,13 +119,90 @@ class YOLOv3tiny(torch.nn.Module):
 # 4. no object mask filter
 # 5. yolo loss function
 
+# def iou_batch(bboxes1: torch.Tensor, bboxes2: torch.Tensor, zero_center=False, center=False):
+#     """ 
+#         Calculate the Intersection / Union between boxes1 and 
+#         boxes2 (per batch obviously)
+#
+#         zero-center: calculate iou s.t each boxes center is aligned
+#         center: boxes are aligned on center
+#     """
+#
+#     x1, x2 = bboxes1[..., 0], bboxes2[..., 0]
+#     y1, y2 = bboxes1[..., 1], bboxes2[..., 1]
+#     w1, w2 = bboxes1[..., 2], bboxes2[..., 2]
+#     h1, h2 = bboxes1[..., 3], bboxes2[..., 3]
+#
+#     area1 = w1 * h1
+#     area2 = w2 * h2
+#
+#     if zero_center:
+#         w1.unsqueeze_(2) # in place version we don't care about the comp graph
+
+
+class CollateVOC():
+    names_file: str
+    keys: dict
+
+    def __init__(self, names_file:str):
+        self.names_file = names_file
+        with open(self.names_file, 'r') as file:
+            self.keys = {line.strip(): i for i, line in enumerate(file)}
+
+    def __call__(self, sample:Tuple[Any, Any]) -> Any:
+
+        """
+            each "batch" here is a tuple, consiting of a PIL.Image and a dictionary,
+            representing the XML tree structure of the bounding box info
+            and other meta data
+
+            what we want:
+            1. images: tensor with a certain batch size, not PIL.Image shape=(batch_size, 3, width, height)
+            2. bounding_boxes: tensor, shape=(batch_size, number of boxes for this image, ATTRIBUTES)
+
+        """
+
+        # TODO: needs a redo, loads of loops, not sure if this is the right format
+        images = torch.stack([torchvision.transforms.ToTensor()(image) for image, _ in sample], dim=0)
+        bounding_boxes = []
+        for image in sample:
+            for _object in image[1]["annotation"]["object"]:
+                labels = [float(value) for value in _object["bndbox"].values()]
+                labels += [1.0 if i == self.keys[_object["name"]] else 0.0 for i in range(CLASSES)]
+                bounding_boxes.append(labels)
+        return images, torch.tensor(bounding_boxes)
+
 if __name__ == "__main__":
     batch_size = 1
+    # input = torch.arange(0, batch_size*416*416*3).type(torch.float32).reshape(batch_size, 3, 416, 416)
+    # model = YOLOv3tiny()
+    # output = model(input)
+    #
+    # print("Input shape: ", input.shape)
+    # print("Output shape: ", output.shape)
 
-    input = torch.arange(0, batch_size*416*416*3).type(torch.float32).reshape(batch_size, 3, 416, 416)
-    model = YOLOv3tiny()
-    output = model(input)
+    train = torchvision.datasets.VOCDetection(
+        root="./data/voc",
+        year="2012",
+        image_set="train",
+        download=True,
+    )
 
-    print("Input shape: ", input.shape)
-    print("Output shape: ", output.shape)
+    # TODO: transforms (need to transform box as well)
+    train_subset = Subset(train, [0])
+    # train_subset[0][0].show()
+    
+    collate_fn = CollateVOC("./data/voc.names")
+    dataloader = DataLoader(train_subset, 
+                            batch_size=batch_size, 
+                            shuffle=True, 
+                            num_workers=1, 
+                            collate_fn=collate_fn) # type: ignore
+
+    for image, label in dataloader:
+        print("Image shape: ", image.shape)
+        print(label)
+
+
+
 
