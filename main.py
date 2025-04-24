@@ -6,7 +6,7 @@ from typing import Tuple, Any
 # import numpy as np
 # from sklearn.cluster import KMeans
 
-CLASSES = 20
+CLASSES = 20 # number of classes in pascal VOC dataset
 ATTRIBUTES = CLASSES + 1 + 4 # number of classes + objectness score + x,y,w,h
 
 class Convolution(torch.nn.Module):
@@ -30,6 +30,7 @@ class YOLOLayer(torch.nn.Module):
 
     def forward(self, input):
         # why not adjusting the anchor boxes?
+        # TODO: draw diagram of whats going on
         batch_size = input.shape[0]
         grid_size = input.shape[2]
 
@@ -61,7 +62,8 @@ class YOLOv3tiny(torch.nn.Module):
         self.conv_layer_21 = Convolution(384, 256, 3)
         self.conv_layer_22 = Convolution(256, 3 * ATTRIBUTES, 1)
 
-        self.yolo_layer_larger = YOLOLayer([(81,82),  (135,169),  (344,319)]) # TODO: use kmeans to calculate from dataset
+        # TODO: use kmeans to calculate from dataset
+        self.yolo_layer_larger = YOLOLayer([(81,82),  (135,169),  (344,319)])
         self.yolo_layer_smaller = YOLOLayer([(10,14),  (23,27),  (37,58)])
 
 
@@ -105,13 +107,15 @@ class YOLOv3tiny(torch.nn.Module):
 # 4. no object mask filter
 # 5. yolo loss function
 
-def iou_batch(bboxes1: torch.Tensor, bboxes2: torch.Tensor, zero_center=False, center=False):
+def iou(bboxes1: torch.Tensor, bboxes2: torch.Tensor, center_aligned=False, center_format=False):
     """ 
-        Calculate the Intersection / Union between boxes1 and 
-        boxes2 (per batch obviously)
+        Calculate the intersection / union between boxes1 and 
+        boxes2 (per batch)
 
-        zero-center: calculate iou s.t each boxes center is aligned
-        center: boxes are aligned on center
+        bboxes1, bboxes2 shape: (batch_size, number_of_boxes, 4)
+
+        center_aligned: boxes center are aligned
+        center_format: are boxes coords in format (cx, cy, w, h) or x,y in top left.
     """
 
     x1, x2 = bboxes1[..., 0], bboxes2[..., 0]
@@ -119,12 +123,38 @@ def iou_batch(bboxes1: torch.Tensor, bboxes2: torch.Tensor, zero_center=False, c
     w1, w2 = bboxes1[..., 2], bboxes2[..., 2]
     h1, h2 = bboxes1[..., 3], bboxes2[..., 3]
 
-    area1 = w1 * h1
-    area2 = w2 * h2
+    area1 = (w1 * h1).unsqueeze(2)
+    area2 = w2 * h2.unsqueeze(1)
 
-    if zero_center:
-        w1.unsqueeze_(2) # in place version we don't care about the comp graph
+    if center_aligned:
+        w1.unsqueeze_(2)
+        w2.unsqueeze_(1)
+        h1.unsqueeze_(2)
+        h2.unsqueeze_(1)
+        w = torch.minimum(w1, w2).clamp(min=0)
+        h = torch.minimum(h1, h2).clamp(min=0)
+    else:
+        if center_format:
+            x1 = x1 - w1 / 2
+            x2 = x2 - w2 / 2
 
+            y1 = y1 - h1 / 2
+            y2 = y2 - h2 / 2
+
+        right1 = (x1 + w1).unsqueeze_(2)
+        right2 = (x2 + w2).unsqueeze_(1)
+        left1 = x1.unsqueeze(2)
+        left2 = x2.unsqueeze(1)
+        w = (torch.minimum(right1, right2) - torch.maximum(left1, left2)).clamp(min=0)
+
+        top1 = y1.unsqueeze(2)
+        top2 = y2.unsqueeze(1)
+        bottom1 = (y1 + h1).unsqueeze(2)
+        bottom2 = (y2 + h2).unsqueeze(1)
+        h = (torch.minimum(bottom1, bottom2) - torch.maximum(top1, top2)).clamp(min=0)
+
+    intersection = w * h
+    return intersection / (area1 + area2 - intersection + 1e-9)
 
 class CollateVOC():
     names_file: str
@@ -167,27 +197,33 @@ if __name__ == "__main__":
     # print("Input shape: ", input.shape)
     # print("Output shape: ", output.shape)
 
-    train = torchvision.datasets.VOCDetection(
-        root="./data/voc",
-        year="2012",
-        image_set="train",
-        download=True,
-    )
+    # train = torchvision.datasets.VOCDetection(
+    #     root="./data/voc",
+    #     year="2012",
+    #     image_set="train",
+    #     download=True,
+    # )
+    #
+    # # TODO: transforms (need to transform box as well)
+    # train_subset = Subset(train, [0])
+    # # train_subset[0][0].show()
+    # 
+    # collate_fn = CollateVOC("./data/voc.names")
+    # dataloader = DataLoader(train_subset, 
+    #                         batch_size=batch_size, 
+    #                         shuffle=True, 
+    #                         num_workers=1, 
+    #                         collate_fn=collate_fn) # type: ignore
+    #
+    # for image, label in dataloader:
+    #     print("Image shape: ", image.shape)
+    #     print(label)
 
-    # TODO: transforms (need to transform box as well)
-    train_subset = Subset(train, [0])
-    # train_subset[0][0].show()
-    
-    collate_fn = CollateVOC("./data/voc.names")
-    dataloader = DataLoader(train_subset, 
-                            batch_size=batch_size, 
-                            shuffle=True, 
-                            num_workers=1, 
-                            collate_fn=collate_fn) # type: ignore
 
-    for image, label in dataloader:
-        print("Image shape: ", image.shape)
-        print(label)
+    a = torch.arange(16).reshape(2, 2, 4)
+    b = torch.arange(32).reshape(2, 4, 4)
+    c = iou(a, b, center_aligned=True)
+    print(c)
 
 
 

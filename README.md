@@ -1,5 +1,9 @@
 # yolov3-tiny in pytorch
 
-This is a tutorial series on how to train an object detection model from scratch with pytorch
+This is a tutorial series on how to train an object detection model from scratch with pytorch.
 
-Visit [silicon chip cookies](https://www.siliconchipcookies.com)
+Visit [silicon chip cookies](https://www.siliconchipcookies.com).
+
+## helpful links
+
+* [yolov3-tiny in pytorch](https://github.com/ValentinFigue/TinyYOLOv3-PyTorch/blob/master/src/model.py)
