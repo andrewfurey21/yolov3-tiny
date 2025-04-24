@@ -3,17 +3,17 @@ from torch.utils.data import DataLoader, Subset
 import torch
 
 from typing import Tuple, Any
-
-import numpy as np
-from sklearn.cluster import KMeans
+# import numpy as np
+# from sklearn.cluster import KMeans
 
 CLASSES = 20
-ATTRIBUTES = CLASSES + 1 + 4
+ATTRIBUTES = CLASSES + 1 + 4 # number of classes + objectness score + x,y,w,h
 
 class Convolution(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, negative_slope=0.1):
+        assert kernel_size == 1 or kernel_size == 3
         super().__init__()
-        padding = 1 if kernel_size == 3 else 0 # in yolov3-tiny, kernel sizes will only be 1 or 3
+        padding = 1 if kernel_size == 3 else 0
         self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size, padding=padding, bias=False)
         self.batch_norm = torch.nn.BatchNorm2d(out_channels)
         self.leaky_relu = torch.nn.LeakyReLU(negative_slope)
@@ -22,44 +22,6 @@ class Convolution(torch.nn.Module):
         output = self.conv(input)
         output = self.batch_norm(output)
         return self.leaky_relu(output)
-
-class Backbone(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.conv_layer_0 = Convolution(3, 16, 3)
-        self.conv_layer_2 = Convolution(16, 32, 3)
-        self.conv_layer_4 = Convolution(32, 64, 3)
-        self.conv_layer_6 = Convolution(64, 128, 3)
-        self.conv_layer_8 = Convolution(128, 256, 3)
-        self.conv_layer_10 = Convolution(256, 512, 3)
-        self.conv_layer_12 = Convolution(512, 1024, 3)
-
-        self.maxpool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
-
-    def forward(self, input):
-        temp_output = self.conv_layer_0(input)
-        temp_output = self.maxpool(temp_output)
-
-        temp_output = self.conv_layer_2(temp_output)
-        temp_output = self.maxpool(temp_output)
-
-        temp_output = self.conv_layer_4(temp_output)
-        temp_output = self.maxpool(temp_output)
-
-        temp_output = self.conv_layer_6(temp_output)
-        temp_output = self.maxpool(temp_output)
-
-        output_1 = self.conv_layer_8(temp_output)
-        temp_output = self.maxpool(output_1)
-
-        temp_output = self.conv_layer_10(temp_output)
-
-        # pad right and bottom since max pool will have a stride of 1
-        temp_output = torch.nn.ConstantPad2d((0, 1, 0, 1), float('-inf'))(temp_output)
-        temp_output = torch.nn.MaxPool2d(kernel_size=2, stride=1)(temp_output)
-
-        output_2= self.conv_layer_12(temp_output)
-        return output_1, output_2
 
 class YOLOLayer(torch.nn.Module):
     def __init__(self, anchors):
@@ -79,10 +41,19 @@ class YOLOLayer(torch.nn.Module):
 class YOLOv3tiny(torch.nn.Module):
     def __init__(self):
         super().__init__()
+        self.maxpool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.backbone = Backbone()
+        # numbered based off yolov3-tiny architecture diagram.
+        self.conv_layer_0 = Convolution(3, 16, 3)
+        self.conv_layer_2 = Convolution(16, 32, 3)
+        self.conv_layer_4 = Convolution(32, 64, 3)
+        self.conv_layer_6 = Convolution(64, 128, 3)
+        self.conv_layer_8 = Convolution(128, 256, 3)
+        self.conv_layer_10 = Convolution(256, 512, 3)
+        self.conv_layer_12 = Convolution(512, 1024, 3)
 
         self.conv_layer_13 = Convolution(1024, 256, 1)
+
         self.conv_layer_14 = Convolution(256, 512, 3)
         self.conv_layer_15 = Convolution(512, 3 * ATTRIBUTES, 1)
 
@@ -95,21 +66,36 @@ class YOLOv3tiny(torch.nn.Module):
 
 
     def forward(self, input):
-        layer_8, layer_12 = self.backbone(input)
+        a0 = self.conv_layer_0(input)
+        a1 = self.maxpool(a0)
+        a2 = self.conv_layer_2(a1)
+        a3 = self.maxpool(a2)
+        a4 = self.conv_layer_4(a3)
+        a5 = self.maxpool(a4)
+        a6 = self.conv_layer_6(a5)
+        a7 = self.maxpool(a6)
+        a8 = self.conv_layer_8(a7)
 
-        output_layer_13 = self.conv_layer_13(layer_12)
-        temp_output = self.conv_layer_14(output_layer_13)
-        temp_output = self.conv_layer_15(temp_output)
-        yolo_output_1 = self.yolo_layer_larger(temp_output)
+        a9 = self.maxpool(a8)
+        a10 = self.conv_layer_10(a9)
+        # pad right and bottom since max pool will have a stride of 1
+        pad_a10 = torch.nn.ConstantPad2d((0, 1, 0, 1), float('-inf'))(a10)
+        a11 = torch.nn.MaxPool2d(kernel_size=2, stride=1)(pad_a10)
+        a12 = self.conv_layer_12(a11)
+        a13 = self.conv_layer_13(a12)
 
-        temp_output = self.conv_layer_18(output_layer_13)
-        temp_output = torch.nn.UpsamplingNearest2d(scale_factor=2)(temp_output)
-        temp_output = torch.cat([temp_output, layer_8], dim=1)
-        temp_output = self.conv_layer_21(temp_output)
-        temp_output = self.conv_layer_22(temp_output)
-        yolo_output_2 = self.yolo_layer_smaller(temp_output)
+        a14 = self.conv_layer_14(a13)
+        a15 = self.conv_layer_15(a14)
+        output_1 = self.yolo_layer_larger(a15)
 
-        final_output = torch.cat([yolo_output_1, yolo_output_2], dim=1)
+        a18 = self.conv_layer_18(a13)
+        a19 = torch.nn.UpsamplingNearest2d(scale_factor=2)(a18)
+        a20 = torch.cat([a19, a8], dim=1)
+        a21 = self.conv_layer_21(a20)
+        a22 = self.conv_layer_22(a21)
+        output_2 = self.yolo_layer_smaller(a22)
+
+        final_output = torch.cat([output_1, output_2], dim=1)
         return final_output
 
 # Function for calculating the loss function:
@@ -119,25 +105,25 @@ class YOLOv3tiny(torch.nn.Module):
 # 4. no object mask filter
 # 5. yolo loss function
 
-# def iou_batch(bboxes1: torch.Tensor, bboxes2: torch.Tensor, zero_center=False, center=False):
-#     """ 
-#         Calculate the Intersection / Union between boxes1 and 
-#         boxes2 (per batch obviously)
-#
-#         zero-center: calculate iou s.t each boxes center is aligned
-#         center: boxes are aligned on center
-#     """
-#
-#     x1, x2 = bboxes1[..., 0], bboxes2[..., 0]
-#     y1, y2 = bboxes1[..., 1], bboxes2[..., 1]
-#     w1, w2 = bboxes1[..., 2], bboxes2[..., 2]
-#     h1, h2 = bboxes1[..., 3], bboxes2[..., 3]
-#
-#     area1 = w1 * h1
-#     area2 = w2 * h2
-#
-#     if zero_center:
-#         w1.unsqueeze_(2) # in place version we don't care about the comp graph
+def iou_batch(bboxes1: torch.Tensor, bboxes2: torch.Tensor, zero_center=False, center=False):
+    """ 
+        Calculate the Intersection / Union between boxes1 and 
+        boxes2 (per batch obviously)
+
+        zero-center: calculate iou s.t each boxes center is aligned
+        center: boxes are aligned on center
+    """
+
+    x1, x2 = bboxes1[..., 0], bboxes2[..., 0]
+    y1, y2 = bboxes1[..., 1], bboxes2[..., 1]
+    w1, w2 = bboxes1[..., 2], bboxes2[..., 2]
+    h1, h2 = bboxes1[..., 3], bboxes2[..., 3]
+
+    area1 = w1 * h1
+    area2 = w2 * h2
+
+    if zero_center:
+        w1.unsqueeze_(2) # in place version we don't care about the comp graph
 
 
 class CollateVOC():
