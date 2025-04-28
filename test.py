@@ -1,12 +1,11 @@
 import torch
 
-a = torch.arange(16).reshape(2, 2, 4)
-b = torch.arange(32).reshape(2, 4, 4)
+input_tensor = torch.tensor([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]).float().reshape(2, 5)
+print(input_tensor)
 
-a.unsqueeze_(1)
-b.unsqueeze_(2)
+# index_tensor = torch.tensor([[0, 1, 2, 0, 0], [2, 0, 0, 1, 2]])
+index_tensor = torch.tensor([[0, 1, 0, 1, 0]])
+print(index_tensor)
 
-c = torch.minimum(a, b)
-print(a)
-print(b)
-print(c)
+dim = 0
+print(torch.gather(input_tensor, dim, index_tensor))
