@@ -1,6 +1,7 @@
 import torchvision
 from torch.utils.data import DataLoader, Subset
 import torch
+import torch.nn.functional as F
 
 from typing import List, Tuple, Any
 # import numpy as np
@@ -13,6 +14,9 @@ IGNORE_THRESHOLD = 0.5
 BATCH_SIZE = 5
 IMAGE_SIZE = 416 # get it to work at different resolutions, like 320. faster training.
 MAX_TARGETS = 10
+
+NO_OBJECT = 0.5
+COORD = 5
 
 class Convolution(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, negative_slope=0.1):
@@ -202,10 +206,8 @@ def no_object_mask(pred: torch.Tensor, target: torch.Tensor):
 
 def no_object_mask_filter(noobj_mask: torch.Tensor, object_index: torch.Tensor):
     """
-        noobj_mask: mask, 1 == no prediction, 0 prediction
-        object_index: indices where theres an object
-
-        why is this necessary?
+        noobj_mask: mask, 1 == no prediction with decent iou in targets
+        object_index: indices where theres an object (in target)
     """
     batch_size, num_predictions = noobj_mask.shape
     noobj_mask = noobj_mask.view(-1) # flatten
@@ -285,11 +287,34 @@ class YOLOLoss(torch.nn.Module):
         self.image_size = image_size
 
     def forward(self, predictions: torch.Tensor, targets: torch.Tensor, num_targets: torch.Tensor):
-        boxes, indices = preprocess_targets(targets, num_targets, self.anchors, self.image_size)
+        targets, target_indices = preprocess_targets(targets, num_targets, self.anchors, self.image_size)
         noobj_mask = no_object_mask(predictions, targets)
-        filtered_noobj_mask = no_object_mask_filter(noobj_mask, indices)
+        noobj_mask = no_object_mask_filter(noobj_mask, indices)
 
+        # Loss
+        # 1. no object loss: supress false positives
+        # 2. object loss: suppress false negatives
+        # 3. class loss
+        # 4. coord loss
+        # 5. loss = no object loss + object loss + class loss + coord loss
 
+        # no objectness loss
+        confidence_logits = predictions[..., 4]
+        target_confidence_noobj = torch.zeros_like(confidence_logits)
+        noobj_confidence_logits = confidence_logits - (1 - noobj_mask) * 1e7
+        noobj_loss = F.binary_cross_entropy_with_logits(noobj_confidence_logits, target_confidence_noobj, reduction="sum")
+
+        batch_size, num_predictions, _ = predictions.shape
+        preds_obj = predictions.view(batch_size * num_predictions, -1).index_select(0, target_indices)
+
+        coord_loss = F.mse_loss(preds_obj[..., :4], targets[..., :4], reduction="sum")
+
+        target_confidence_obj = torch.ones_like(preds_obj[..., 4])
+        obj_loss = F.binary_cross_entropy_with_logits(preds_obj[..., 4], target_confidence_noobj, reduction="sum")
+
+        class_loss = F.binary_cross_entropy_with_logits(preds_obj[..., 5:], targets[..., 5:], reduction="sum")
+
+        return class_loss + obj_loss + COORD * coord_loss + NO_OBJECT * noobj_loss
 
 if __name__ == "__main__":
     # input = torch.arange(0, batch_size*416*416*3).type(torch.float32).reshape(batch_size, 3, 416, 416)
