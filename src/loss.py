@@ -1,45 +1,7 @@
-import torchvision
-from torch.utils.data import DataLoader, Subset
+from typing import Tuple, List
+
 import torch
 import torch.nn.functional as F
-
-from typing import List, Tuple, Any
-import cv2
-import colorsys
-
-import constants
-
-class CollateVOC():
-    names_file: str
-    keys: dict
-
-    def __init__(self, names_file:str):
-        self.names_file = names_file
-        with open(self.names_file, 'r') as file:
-            self.keys = {line.strip(): i for i, line in enumerate(file)}
-
-    def __call__(self, sample:Tuple[Any, Any]) -> Any:
-
-        """
-            each "batch" here is a tuple, consiting of a PIL.Image and a dictionary,
-            representing the XML tree structure of the bounding box info
-            and other meta data
-
-            what we want:
-            1. images: tensor with a certain batch size, not PIL.Image shape=(batch_size, 3, width, height)
-            2. bounding_boxes: tensor, shape=(batch_size, number of boxes for this image, ATTRIBUTES)
-        """
-
-        # TODO: needs a redo, loads of loops
-        # pretty sure pascal VOC uses [xmin, ymin, xmax, ymax]. need to convert if not done by pytorch
-        images = torch.stack([torchvision.transforms.ToTensor()(image) for image, _ in sample], dim=0)
-        bounding_boxes = []
-        for image in sample:
-            for _object in image[1]["annotation"]["object"]:
-                labels = [float(value) for value in _object["bndbox"].values()]
-                labels += [1.0 if i == self.keys[_object["name"]] else 0.0 for i in range(CLASSES)]
-                bounding_boxes.append(labels)
-        return images, torch.tensor(bounding_boxes) #, lengths
 
 def iou(bboxes1: torch.Tensor, bboxes2: torch.Tensor, center_aligned=False, center_format=False):
     """ 
@@ -89,7 +51,7 @@ def iou(bboxes1: torch.Tensor, bboxes2: torch.Tensor, center_aligned=False, cent
     return intersection / (area1 + area2 - intersection + 1e-9) # might not need epsilon
 
 
-def no_object_mask(pred: torch.Tensor, target: torch.Tensor):
+def no_object_mask(pred: torch.Tensor, target: torch.Tensor, ignore_thresh:int):
     """
         Creates a mask, same shape as pred without box dims (batch_size, num_predictions),
         1 == no prediction with a good iou in target
@@ -98,7 +60,7 @@ def no_object_mask(pred: torch.Tensor, target: torch.Tensor):
     batch_size, _, num_attributes = pred.shape
     assert batch_size == target.shape[0], num_attributes == target.shape[2]
     ious = iou(pred[..., :4], target[..., :4], center_format=True)
-    return torch.max(ious, dim=2)[0] < IGNORE_THRESHOLD
+    return torch.max(ious, dim=2)[0] < ignore_thresh 
 
 def no_object_mask_filter(noobj_mask: torch.Tensor, object_index: torch.Tensor):
     """
@@ -177,14 +139,17 @@ def preprocess_targets(target_batch: torch.Tensor, num_targets: torch.Tensor,
     return torch.cat(targets_flat), torch.cat(object_index_flat)
 
 class YOLOLoss(torch.nn.Module):
-    def __init__(self, anchors, image_size):
+    def __init__(self, anchors, image_size, ignore_thresh, no_object_coeff, coord_coeff):
         super().__init__()
         self.anchors = anchors
         self.image_size = image_size
+        self.ignore_thresh = ignore_thresh
+        self.no_object_coeff = no_object_coeff
+        self.coord_coeff = coord_coeff
 
     def forward(self, predictions: torch.Tensor, targets: torch.Tensor, num_targets: torch.Tensor):
         targets, target_indices = preprocess_targets(targets, num_targets, self.anchors, self.image_size)
-        noobj_mask = no_object_mask(predictions, targets)
+        noobj_mask = no_object_mask(predictions, targets, self.ignore_thresh)
         noobj_mask = no_object_mask_filter(noobj_mask, indices)
 
         # Loss
@@ -210,66 +175,6 @@ class YOLOLoss(torch.nn.Module):
 
         class_loss = F.binary_cross_entropy_with_logits(preds_obj[..., 5:], targets[..., 5:], reduction="sum")
 
-        total_loss = class_loss + obj_loss + COORD * coord_loss + NO_OBJECT * noobj_loss
+        total_loss = class_loss + obj_loss + self.coord_coeff * coord_loss + self.no_object_coeff * noobj_loss
 
         return total_loss, coord_loss, obj_loss, noobj_loss, class_loss
-
-
-def rescale_bbox_to_image():
-    pass
-
-def box_colour(class_id:int, num_classes:int) -> Tuple:
-    h = float(class_id) / float(num_classes)
-    r, g, b = colorsys.hsv_to_rgb(h, 1, 1)
-    return (int(r * 255), int(g * 255), int(b * 255))[::-1]
-
-def draw_bboxes(image, boxes:List[Tuple], class_ids: List[int], class_names:List[str]):
-    """
-        image:
-        boxes: List[Tuple[x1, y1, x2, y2]]. 
-        positions have to be scaled correctly to original image size (rescale_bbox_to_image)
-        class_names: List[str]
-    """
-    assert len(boxes) == len(class_ids)
-
-    for box, class_id in zip(boxes, class_ids):
-        title = class_names[class_id]
-        colour = box_colour(class_id, len(class_names))
-        cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), colour, 4)
-        cv2.putText(image, title, (box[0], box[1]), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1, cv2.LINE_AA)
-
-def inference_single_image(model, input_file_name, output_file_name, class_names):
-    image = cv2.imread(input_file_name)
-
-    positions = [(50, 50, 100, 100),
-               (75, 90, 180, 200),
-               (300, 40, 350, 145)]
-    classes = [1, 0, 1]
-
-    draw_bboxes(image, positions, classes, class_names)
-    cv2.imwrite(output_file_name, image)
-
-if __name__ == "__main__":
-    # training_data = torchvision.datasets.VOCDetection(
-    #     root="./data/voc",
-    #     year="2012",
-    #     image_set="train",
-    #     download=True,
-    # )
-
-    # collate_fn = CollateVOC("./data/voc.names")
-    # dataloader = DataLoader(training_data,
-    #                         batch_size=BATCH_SIZE,
-    #                         shuffle=True,
-    #                         num_workers=1,
-    #                         collate_fn=collate_fn) # type: ignore
-
-    model = YOLOv3tiny()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
-
-    input = torch.randn((1, 3, 416, 416))
-    output= model(input)
-    print(output.shape)
-
-
-

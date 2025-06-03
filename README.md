@@ -1,5 +1,21 @@
 # yolov3-tiny in pytorch
 
+yolov3-tiny training and inference code using pytorch.
+
+.
+├── src
+│   ├── loss.py
+│   ├── model.py
+│   └── data.py
+├── infer.py
+└── train.py
+
+* `loss.py`: loss function
+* `model.py`: description of the yolov3-tiny model
+* `data.py`: dealing data loaders, transforms and data augmentation
+* `infer.py`: inference code, drawing bounding boxes
+* `train.py`: training script, contains hyperparameters
+
 ## useful links
 
 * This implementation is based off of [yolov3-tiny in pytorch](https://github.com/ValentinFigue/TinyYOLOv3-PyTorch)

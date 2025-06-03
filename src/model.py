@@ -1,7 +1,4 @@
-
 import torch
-
-ATTRIBUTES = CLASSES + 1 + 4
 
 class Convolution(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, negative_slope=0.1):
@@ -18,21 +15,23 @@ class Convolution(torch.nn.Module):
         return self.leaky_relu(output)
 
 class YOLOLayer(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, num_attributes:int):
         super().__init__()
+        self.num_attributes = num_attributes
 
     def forward(self, input):
         batch_size = input.shape[0]
         grid_size = input.shape[2]
 
-        new_view = input.view(batch_size, 3, ATTRIBUTES, grid_size, grid_size)
+        new_view = input.view(batch_size, 3, self.num_attributes, grid_size, grid_size)
         permutation = new_view.permute(0, 1, 3, 4, 2)
         contiguous = permutation.contiguous()
-        return contiguous.view(batch_size, 3 * grid_size * grid_size, ATTRIBUTES)
+        return contiguous.view(batch_size, 3 * grid_size * grid_size, self.num_attributes)
 
 class YOLOv3tiny(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, num_classes:int):
         super().__init__()
+        self.num_attributes = num_classes + 5
         self.maxpool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
 
         # layers numbered based off yolov3-tiny architecture diagram.
@@ -47,14 +46,14 @@ class YOLOv3tiny(torch.nn.Module):
         self.conv_layer_13 = Convolution(1024, 256, 1)
 
         self.conv_layer_14 = Convolution(256, 512, 3)
-        self.conv_layer_15 = Convolution(512, 3 * ATTRIBUTES, 1)
+        self.conv_layer_15 = Convolution(512, 3 * self.num_attributes, 1)
 
         self.conv_layer_18 = Convolution(256, 128, 1)
         self.conv_layer_21 = Convolution(384, 256, 3)
-        self.conv_layer_22 = Convolution(256, 3 * ATTRIBUTES, 1)
+        self.conv_layer_22 = Convolution(256, 3 * self.num_attributes, 1)
 
-        self.yolo_layer_larger = YOLOLayer()
-        self.yolo_layer_smaller = YOLOLayer()
+        self.yolo_layer_larger = YOLOLayer(self.num_attributes)
+        self.yolo_layer_smaller = YOLOLayer(self.num_attributes)
 
 
     def forward(self, input):
@@ -70,7 +69,7 @@ class YOLOv3tiny(torch.nn.Module):
 
         a9 = self.maxpool(a8)
         a10 = self.conv_layer_10(a9)
-        # pad right and bottom since max pool will have a stride of 1
+
         pad_a10 = torch.nn.ConstantPad2d((0, 1, 0, 1), float('-inf'))(a10)
         a11 = torch.nn.MaxPool2d(kernel_size=2, stride=1)(pad_a10)
         a12 = self.conv_layer_12(a11)
@@ -87,6 +86,4 @@ class YOLOv3tiny(torch.nn.Module):
         a22 = self.conv_layer_22(a21)
         output_2 = self.yolo_layer_smaller(a22)
 
-        # cat and reshape in such a way that applying anchor boxes is easy
-        final_output = torch.cat([output_1, output_2], dim=1)
-        return final_output
+        return torch.cat([output_1, output_2], dim=1)
