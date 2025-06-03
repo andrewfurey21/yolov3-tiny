@@ -2,6 +2,7 @@
 
 yolov3-tiny training and inference code using pytorch.
 
+```
 .
 ├── src
 │   ├── loss.py
@@ -9,6 +10,7 @@ yolov3-tiny training and inference code using pytorch.
 │   └── data.py
 ├── infer.py
 └── train.py
+```
 
 * `loss.py`: loss function
 * `model.py`: description of the yolov3-tiny model
