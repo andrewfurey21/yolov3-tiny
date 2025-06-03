@@ -1,1 +1,4 @@
 data/*
+**/.mypy_cache/*
+.env
+**/wandb/*

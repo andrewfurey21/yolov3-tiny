@@ -4,6 +4,9 @@ import torch
 import torch.nn.functional as F
 
 from typing import List, Tuple, Any
+import cv2
+import colorsys
+
 # import numpy as np
 # from sklearn.cluster import KMeans # use mlpack
 
@@ -11,12 +14,15 @@ CLASSES = 20 # number of classes in pascal VOC dataset
 ATTRIBUTES = CLASSES + 1 + 4 # number of classes + objectness score + x,y,w,h
 IGNORE_THRESHOLD = 0.5
 
-BATCH_SIZE = 5
+BATCH_SIZE = 1
 IMAGE_SIZE = 416 # get it to work at different resolutions, like 320. faster training.
 MAX_TARGETS = 10
 
 NO_OBJECT = 0.5
 COORD = 5
+
+LR = 1e-3
+NUM_EPOCHS = 1
 
 class Convolution(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, negative_slope=0.1):
@@ -43,7 +49,7 @@ class YOLOLayer(torch.nn.Module):
         new_view = input.view(batch_size, 3, ATTRIBUTES, grid_size, grid_size)
         permutation = new_view.permute(0, 1, 3, 4, 2)
         contiguous = permutation.contiguous()
-        return contiguous.view(batch_size, -1, ATTRIBUTES)
+        return contiguous.view(batch_size, 3 * grid_size * grid_size, ATTRIBUTES)
 
 class YOLOv3tiny(torch.nn.Module):
     def __init__(self):
@@ -68,7 +74,7 @@ class YOLOv3tiny(torch.nn.Module):
         self.conv_layer_21 = Convolution(384, 256, 3)
         self.conv_layer_22 = Convolution(256, 3 * ATTRIBUTES, 1)
 
-        # TODO: use kmeans to calculate from dataset
+        # TODO: use kmeans to calculate anchors from dataset
         self.yolo_layer_larger = YOLOLayer()
         self.yolo_layer_smaller = YOLOLayer()
 
@@ -129,7 +135,7 @@ class CollateVOC():
         """
 
         # TODO: needs a redo, loads of loops
-        # pretty sure pascal VOC uses [xmin, ymin, xmax, ymax]. need to convert.
+        # pretty sure pascal VOC uses [xmin, ymin, xmax, ymax]. need to convert if not done by pytorch
         images = torch.stack([torchvision.transforms.ToTensor()(image) for image, _ in sample], dim=0)
         bounding_boxes = []
         for image in sample:
@@ -137,13 +143,7 @@ class CollateVOC():
                 labels = [float(value) for value in _object["bndbox"].values()]
                 labels += [1.0 if i == self.keys[_object["name"]] else 0.0 for i in range(CLASSES)]
                 bounding_boxes.append(labels)
-        return images, torch.tensor(bounding_boxes)
-
-# Function for calculating the loss function:
-# 1. no object mask function
-# 2. no object mask filter
-# 3. pre process targets
-# 4. yolo loss function
+        return images, torch.tensor(bounding_boxes) #, lengths
 
 def iou(bboxes1: torch.Tensor, bboxes2: torch.Tensor, center_aligned=False, center_format=False):
     """ 
@@ -314,53 +314,70 @@ class YOLOLoss(torch.nn.Module):
 
         class_loss = F.binary_cross_entropy_with_logits(preds_obj[..., 5:], targets[..., 5:], reduction="sum")
 
-        return class_loss + obj_loss + COORD * coord_loss + NO_OBJECT * noobj_loss
+        total_loss = class_loss + obj_loss + COORD * coord_loss + NO_OBJECT * noobj_loss
+
+        return total_loss, coord_loss, obj_loss, noobj_loss, class_loss
+
+
+def rescale_bbox_to_image():
+    pass
+
+def box_colour(class_id:int, num_classes:int) -> Tuple:
+    h = float(class_id) / float(num_classes)
+    r, g, b = colorsys.hsv_to_rgb(h, 1, 1)
+    return (int(r * 255), int(g * 255), int(b * 255))[::-1]
+
+def draw_bboxes(image, boxes:List[Tuple], class_ids: List[int], class_names:List[str]):
+    """
+        image:
+        boxes: List[Tuple[x1, y1, x2, y2]]. 
+        positions have to be scaled correctly to original image size (rescale_bbox_to_image)
+        class_names: List[str]
+    """
+    assert len(boxes) == len(class_ids)
+
+    for box, class_id in zip(boxes, class_ids):
+        title = class_names[class_id]
+        colour = box_colour(class_id, len(class_names))
+        cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), colour, 4)
+        cv2.putText(image, title, (box[0], box[1]), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1, cv2.LINE_AA)
+
+def inference_single_image(model, input_file_name, output_file_name, class_names):
+    image = cv2.imread(input_file_name)
+
+    positions = [(50, 50, 100, 100),
+               (75, 90, 180, 200),
+               (300, 40, 350, 145)]
+    classes = [1, 0, 1]
+
+    draw_bboxes(image, positions, classes, class_names)
+    cv2.imwrite(output_file_name, image)
 
 if __name__ == "__main__":
-    # input = torch.arange(0, batch_size*416*416*3).type(torch.float32).reshape(batch_size, 3, 416, 416)
-    # model = YOLOv3tiny()
-    # output = model(input)
-    #
-    # print("Input shape: ", input.shape)
-    # print("Output shape: ", output.shape)
 
-    # train = torchvision.datasets.VOCDetection(
+    # training_data = torchvision.datasets.VOCDetection(
     #     root="./data/voc",
     #     year="2012",
     #     image_set="train",
     #     download=True,
     # )
     #
-    # # TODO: transforms (need to transform box as well)
-    # train_subset = Subset(train, [0])
-    # # train_subset[0][0].show()
-    # 
     # collate_fn = CollateVOC("./data/voc.names")
-    # dataloader = DataLoader(train_subset,
-    #                         batch_size=batch_size,
+    # dataloader = DataLoader(training_data,
+    #                         batch_size=BATCH_SIZE,
     #                         shuffle=True,
     #                         num_workers=1,
     #                         collate_fn=collate_fn) # type: ignore
-    #
-    # for image, label in dataloader:
-    #     print("Image shape: ", image.shape)
-    #     print(label)
 
+    # model = YOLOv3tiny()
+    # optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
+    input_file_name = "./test_image.jpg"
+    output_file_name = "./test_output_image.jpg"
+    class_names = ["squirrel", "computer"]
 
-    num_targets = torch.randint(low=1, high=MAX_TARGETS, size=(BATCH_SIZE,))
-    target_batch = torch.randint(low=2, high=200, size=(BATCH_SIZE, MAX_TARGETS, 4), dtype=torch.float)
-    pred_batch = torch.randint(low=2, high=200, size=(BATCH_SIZE, MAX_TARGETS, 4), dtype=torch.float)
+    model = ""
 
-    list_anchors = [(10, 14), (23, 27), (37, 58), (81, 82), (135, 169), (344, 319)]
-    targets, indices = preprocess_targets(target_batch, num_targets, list_anchors, IMAGE_SIZE)
-
-    print(targets.shape)
-    print(targets)
-    print(indices.shape)
-    print(indices)
-
-
-
+    inference_single_image(model, input_file_name, output_file_name, class_names)
 
 
