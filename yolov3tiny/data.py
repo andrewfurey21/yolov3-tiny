@@ -5,6 +5,17 @@ from typing import List, Any, Tuple
 
 from PIL import Image
 
+def get_names(names_from_paper:str, actual_names:str):
+    with open(names_from_paper) as f:
+        paper = {line.strip(): i for i, line in enumerate(f)}
+
+    with open(actual_names) as f:
+        names = [line.strip() for line in f]
+        keys = {paper[name]: i for i, name in enumerate(names)}
+        indices = {i: name for i, name in enumerate(names)}
+
+    return keys, indices
+
 def center_to_topleft(bbox: torch.Tensor):
     bbox[..., 0] -= bbox[..., 2] / 2
     bbox[..., 1] -= bbox[..., 3] / 2
@@ -16,7 +27,7 @@ def topleft_to_center(bbox: torch.Tensor):
     return bbox
 
 class LabelCompose(torchvision.transforms.Compose):
-    def __call__(self, image: Image.Image, label=torch.Tensor):
+    def __call__(self, image: Image.Image, label:torch.Tensor = None):
         for transform in self.transforms:
             image, label = transform(image, label)
         return image, label
@@ -25,17 +36,19 @@ class ToSquare:
     def __init__(self, fill=127):
         self.fill = fill
 
-    def __call__(self, image: torch.Tensor, label: torch.Tensor):
+    def __call__(self, image: torch.Tensor, label: torch.Tensor = None):
         h, w = image.shape[-2:]
         diff = abs(w - h)
         pad1 = diff // 2
         pad2 = diff - pad1
         if w > h:
             padding = (0, pad1, 0, pad2)
-            label[..., 1] += pad1
+            if label is not None:
+                label[..., 1] += pad1
         else:
             padding = (pad1, 0, pad2, 0)
-            label[..., 0] += pad1
+            if label is not None:
+                label[..., 0] += pad1
         padded_image = torchvision.transforms.functional.pad(image, padding, self.fill) # type: ignore
         return padded_image, label
 
@@ -44,27 +57,28 @@ class Resize:
         self.width = width
         self.height = height 
 
-    def __call__(self, image: torch.Tensor, label: torch.Tensor):
-        c, h, w = image.shape
+    def __call__(self, image: torch.Tensor, label: torch.Tensor = None):
+        h, w = image.shape[-2:]
         print(image.shape)
         scale_w = self.width / w
         scale_h = self.height / h
-        label[..., 0] *= scale_w
-        label[..., 1] *= scale_h
-        label[..., 2] *= scale_w
-        label[..., 3] *= scale_h
+        if label is not None:
+            label[..., 0] *= scale_w
+            label[..., 1] *= scale_h
+            label[..., 2] *= scale_w
+            label[..., 3] *= scale_h
         image = torch.nn.functional.interpolate(image.unsqueeze(0), size=(self.width, self.height), mode="bilinear")
         return image.squeeze(0), label
 
 class ToTensor:
-    def __call__(self, image: Image.Image, label: torch.Tensor):
+    def __call__(self, image: Image.Image, label: torch.Tensor = None):
         return torchvision.transforms.functional.to_tensor(image), label # type: ignore
 
 class ColorJitter(torchvision.transforms.ColorJitter):
     def __init__(self, brightness, contrast, saturation, hue):
         super().__init__(brightness, contrast, saturation, hue)
 
-    def __call__(self, image: torch.Tensor, label: torch.Tensor):
+    def __call__(self, image: torch.Tensor, label: torch.Tensor = None):
         return super().__call__(image), label
 
 # take in image and label and output (tensor, tensor) of correct shape
@@ -74,6 +88,15 @@ def prepare_for_training(image_size):
         [
             ToTensor(),
             ColorJitter(brightness=1, contrast=1, saturation=1.5, hue=0.1),
+            ToSquare(),
+            Resize(image_size, image_size),
+        ]
+    )
+
+def prepare_for_inference(image_size):
+    return LabelCompose(
+        [
+            ToTensor(),
             ToSquare(),
             Resize(image_size, image_size),
         ]

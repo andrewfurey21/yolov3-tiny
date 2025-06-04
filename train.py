@@ -3,18 +3,16 @@ import torchvision
 from yolov3tiny import data, draw
 
 if __name__ == "__main__":
+    torch.manual_seed(1234)
+
     # hyperparams
     batch_size = 1 # 32
     image_size = 416
     num_classes = 80
 
-    with open("./data/coco-paper.names") as f:
-        paper = {line.strip(): i for i, line in enumerate(f)}
-
-    with open("./data/coco.names") as f:
-        names = [line.strip() for line in f]
-        keys = {paper[name]: i for i, name in enumerate(names)}
-        indices = {i: name for i, name in enumerate(names)}
+    names_from_paper = "./data/coco-paper.names"
+    actual_names = "./data/coco.names"
+    keys, indices = data.get_names(names_from_paper, actual_names)
 
     # dataset
     dataset = data.CocoBoundingBoxDataset(
