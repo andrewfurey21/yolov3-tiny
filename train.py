@@ -1,4 +1,6 @@
-from yolov3tiny import data
+import torch
+import torchvision
+from yolov3tiny import data, draw
 
 if __name__ == "__main__":
     # hyperparams
@@ -10,9 +12,9 @@ if __name__ == "__main__":
         paper = {line.strip(): i for i, line in enumerate(f)}
 
     with open("./data/coco.names") as f:
-        keys = {paper[line.strip()]: (i, line.strip()) for i, line in enumerate(f)}
-
-    print(keys)
+        names = [line.strip() for line in f]
+        keys = {paper[name]: i for i, name in enumerate(names)}
+        indices = {i: name for i, name in enumerate(names)}
 
     # dataset
     dataset = data.CocoBoundingBoxDataset(
@@ -23,22 +25,11 @@ if __name__ == "__main__":
         num_classes=num_classes
     )
 
-    print(dataset[0])
+    image, labels, labels_size = dataset[0]
+    class_ids = torch.argmax(labels[..., 5:], dim=1).tolist()
+    class_names = [indices[id] for id in class_ids]
 
-    # collate_fn = data.CollateCOCO("./data/coco.names", image_size)
-    # dataloader = DataLoader(dataset,
-    #                         batch_size=batch_size,
-    #                         shuffle=True,
-    #                         num_workers=1,
-    #                         collate_fn=collate_fn)
-    #
-    # image = next(iter(dataloader))
-    #
-    # pil_image = torchvision.transforms.ToPILImage()(image.squeeze(0))
-    # pil_image.show()
-
-
-
-
-
+    pil_image = torchvision.transforms.functional.to_pil_image(image) # type: ignore
+    output = draw.draw_bboxes(pil_image, labels[..., :4], class_names)
+    output.show()
 
