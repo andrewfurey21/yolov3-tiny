@@ -7,6 +7,7 @@ from yolov3tiny.model import YOLOv3tiny
 from yolov3tiny import data
 
 import torch
+import torchvision
 
 def box_colour(class_id:int, num_classes:int) -> Tuple:
     h = float(class_id) / float(num_classes)
@@ -21,7 +22,7 @@ def draw_bboxes(image:Image.Image, boxes:List[Tuple], class_names: List[str]):
         class_names: List[str]
     """
 
-    assert len(boxes) == len(class_ids), "Number of boxes don't match number of class ids"
+    assert len(boxes) == len(class_names), "Number of boxes don't match number of class ids"
     font = ImageFont.truetype("./fonts/Rubik-Regular.ttf")
     draw = ImageDraw.ImageDraw(image)
     for i, (box, class_name) in enumerate(zip(boxes, class_names)):
@@ -54,10 +55,11 @@ if __name__ == "__main__":
         num_classes=num_classes
     )
 
-    image = dataset[0][0]
-    boxes = dataset[0][1][..., :4].tolist()
-    class_ids = torch.argmax(dataset[0][1][..., 5:], dim=1).tolist()
+    image, labels, labels_size = dataset[0]
+    class_ids = torch.argmax(labels[..., 5:], dim=1).tolist()
     class_names = [indices[id] for id in class_ids]
-    output = draw_bboxes(image, boxes, class_names)
+
+    pil_image = torchvision.transforms.functional.to_pil_image(image) # type: ignore
+    output = draw_bboxes(pil_image, labels[..., :4], class_names)
     output.show()
 
