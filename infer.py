@@ -1,37 +1,63 @@
 from typing import Tuple, List
-import cv2
 import colorsys
 
-def rescale_bbox_to_image():
-    pass
+from PIL import ImageDraw, Image, ImageFont
+
+from yolov3tiny.model import YOLOv3tiny
+from yolov3tiny import data
+
+import torch
 
 def box_colour(class_id:int, num_classes:int) -> Tuple:
     h = float(class_id) / float(num_classes)
     r, g, b = colorsys.hsv_to_rgb(h, 1, 1)
-    return (int(r * 255), int(g * 255), int(b * 255))[::-1]
+    return (int(r * 255), int(g * 255), int(b * 255))
 
-def draw_bboxes(image, boxes:List[Tuple], class_ids: List[int], class_names:List[str]):
+def draw_bboxes(image:Image.Image, boxes:List[Tuple], class_names: List[str]):
     """
-        image:
-        boxes: List[Tuple[x1, y1, x2, y2]]. 
+        image: PIL.Image.Image
+        boxes: List[Tuple[x1, y1, x2, y2]].
         positions have to be scaled correctly to original image size (rescale_bbox_to_image)
         class_names: List[str]
     """
-    assert len(boxes) == len(class_ids)
 
-    for box, class_id in zip(boxes, class_ids):
-        title = class_names[class_id]
-        colour = box_colour(class_id, len(class_names))
-        cv2.rectangle(image, (box[0], box[1]), (box[2], box[3]), colour, 4)
-        cv2.putText(image, title, (box[0], box[1]), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 1, cv2.LINE_AA)
+    assert len(boxes) == len(class_ids), "Number of boxes don't match number of class ids"
+    font = ImageFont.truetype("./fonts/Rubik-Regular.ttf")
+    draw = ImageDraw.ImageDraw(image)
+    for i, (box, class_name) in enumerate(zip(boxes, class_names)):
+        colour = box_colour(i, len(class_names))
+        x1, y1, x2, y2 = box[0], box[1], box[0] + box[2], box[1] + box[3]
+        draw.rectangle((x1, y1, x2, y2), outline=colour, width=3)
+        draw.text((x1, y1), class_name, font=font, fill="black")
+    return image
 
-def inference_single_image(model, input_file_name, output_file_name, class_names):
-    image = cv2.imread(input_file_name)
+if __name__ == "__main__":
+    # hyperparams
+    batch_size = 1 # 32
+    image_size = 416
+    num_classes = 80
 
-    positions = [(50, 50, 100, 100),
-               (75, 90, 180, 200),
-               (300, 40, 350, 145)]
-    classes = [1, 0, 1]
+    with open("./data/coco-paper.names") as f:
+        paper = {line.strip(): i for i, line in enumerate(f)}
 
-    draw_bboxes(image, positions, classes, class_names)
-    cv2.imwrite(output_file_name, image)
+    with open("./data/coco.names") as f:
+        names = [line.strip() for line in f]
+        keys = {paper[name]: i for i, name in enumerate(names)}
+        indices = {i: name for i, name in enumerate(names)}
+
+    # dataset
+    dataset = data.CocoBoundingBoxDataset(
+        images="./data/val2017/",
+        annotations="./data/annotations/instances_val2017.json",
+        category_ids=keys,
+        image_size=image_size,
+        num_classes=num_classes
+    )
+
+    image = dataset[0][0]
+    boxes = dataset[0][1][..., :4].tolist()
+    class_ids = torch.argmax(dataset[0][1][..., 5:], dim=1).tolist()
+    class_names = [indices[id] for id in class_ids]
+    output = draw_bboxes(image, boxes, class_names)
+    output.show()
+

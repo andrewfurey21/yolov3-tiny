@@ -25,3 +25,4 @@ yolov3-tiny training and inference code using pytorch.
 * [YOLOv2 paper](https://arxiv.org/pdf/1612.08242)
 * [YOLOv3 paper](https://arxiv.org/pdf/1804.02767)
 * [yolov3-tiny config from darknet](https://github.com/pjreddie/darknet/blob/master/cfg/yolov3-tiny.cfg)
+* [names in coco dataset](https://tech.amikelive.com/node-718/what-object-categories-labels-are-in-coco-dataset/)

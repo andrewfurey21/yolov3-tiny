@@ -1,66 +1,43 @@
-"""
-momentum=0.9
-decay=0.0005
-
-# data augmentation
-saturation = 1.5
-exposure = 1.5
-hue=.1
-
-max_batches = 500200
-"""
-import random
-
-import wandb
-
-CLASSES = 20
-ATTRIBUTES = CLASSES + 1 + 4
-IGNORE_THRESHOLD = 0.5
-
-BATCH_SIZE = 1 # training: 32
-IMAGE_SIZE = 416
-MAX_TARGETS = 10
-
-NO_OBJECT = 0.5
-COORD = 5
-
-LR = 1e-3
-NUM_EPOCHS = 1
+from yolov3tiny import data
 
 if __name__ == "__main__":
-    run = wandb.init(
-        entity="andrewfurey2003",
-        project="yolov3-tiny training run",
-        config = {
-            "learning_rate": 1e-3,
-            "architecture": "yolov3-tiny",
-            "dataset": "Pascal VOC",
-            "epochs": 10,
-        },
+    # hyperparams
+    batch_size = 1 # 32
+    image_size = 416
+    num_classes = 80
+
+    with open("./data/coco-paper.names") as f:
+        paper = {line.strip(): i for i, line in enumerate(f)}
+
+    with open("./data/coco.names") as f:
+        keys = {paper[line.strip()]: (i, line.strip()) for i, line in enumerate(f)}
+
+    print(keys)
+
+    # dataset
+    dataset = data.CocoBoundingBoxDataset(
+        images="./data/val2017/",
+        annotations="./data/annotations/instances_val2017.json",
+        category_ids=keys,
+        image_size=image_size,
+        num_classes=num_classes
     )
 
-    epochs = 10
-    offset = random.random() / 5
-    for epoch in range(2, epochs):
-        acc = 1 - 2**-epoch - random.random() / epoch - offset
-        loss = 2**-epoch + random.random() / epoch + offset
-        run.log({"accuracy": acc, "loss": loss})
+    print(dataset[0])
 
-    run.finish()
-
-    # training_data = torchvision.datasets.VOCDetection(
-    #     root="./data/voc",
-    #     year="2012",
-    #     image_set="train",
-    #     download=True,
-    # )
-
-    # collate_fn = CollateVOC("./data/voc.names")
-    # dataloader = DataLoader(training_data,
-    #                         batch_size=BATCH_SIZE,
+    # collate_fn = data.CollateCOCO("./data/coco.names", image_size)
+    # dataloader = DataLoader(dataset,
+    #                         batch_size=batch_size,
     #                         shuffle=True,
     #                         num_workers=1,
-    #                         collate_fn=collate_fn) # type: ignore
+    #                         collate_fn=collate_fn)
+    #
+    # image = next(iter(dataloader))
+    #
+    # pil_image = torchvision.transforms.ToPILImage()(image.squeeze(0))
+    # pil_image.show()
+
+
 
 
 
