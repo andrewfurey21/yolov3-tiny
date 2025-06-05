@@ -136,3 +136,12 @@ class CocoBoundingBoxDataset(CocoDetection):
             image_tensor, _ = self.transform(image, None)
             padded_output = torch.zeros(self.max_num_boxes, self.num_attributes)
             return image_tensor, padded_output, 0
+
+def collate_coco_sample(sample):
+    images, labels, sizes = [], [], []
+    for image, label, size in sample:
+        images.append(image)
+        labels.append(label)
+        sizes.append(size)
+    return torch.stack(images), torch.stack(labels), torch.tensor(sizes)
+

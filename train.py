@@ -1,14 +1,6 @@
 import torch
 from torch.utils.data import DataLoader, RandomSampler
-from yolov3tiny import data
-
-def collate_fn(sample):
-    images, labels, sizes = [], [], []
-    for image, label, size in sample:
-        images.append(image)
-        labels.append(label)
-        sizes.append(size)
-    return torch.stack(images), torch.stack(labels), torch.tensor(sizes)
+from yolov3tiny import data, model, loss
 
 if __name__ == "__main__":
     torch.manual_seed(1234)
