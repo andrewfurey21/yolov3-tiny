@@ -1,8 +1,7 @@
 import torch
-import torchvision
 from PIL import Image
 
-from yolov3tiny import data, draw, model
+from yolov3tiny import data, model
 
 if __name__ == "__main__":
     torch.manual_seed(1234)

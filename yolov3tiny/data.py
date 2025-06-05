@@ -59,7 +59,6 @@ class Resize:
 
     def __call__(self, image: torch.Tensor, label: torch.Tensor = None):
         h, w = image.shape[-2:]
-        print(image.shape)
         scale_w = self.width / w
         scale_h = self.height / h
         if label is not None:
@@ -103,12 +102,13 @@ def prepare_for_inference(image_size):
     )
 
 class CocoBoundingBoxDataset(CocoDetection):
-    def __init__(self, images:str, annotations:str, category_ids:dict, image_size:int, num_classes:int):
+    def __init__(self, images:str, annotations:str, category_ids:dict, image_size:int, num_classes:int, max_num_boxes:int):
         super().__init__(images, annotations)
-        self.image_size = image_size
-        self.transform = prepare_for_training(self.image_size)
+        self.transform = prepare_for_training(image_size)
         self.num_classes = num_classes
+        self.num_attributes = num_classes + 5
         self.category_ids = category_ids
+        self.max_num_boxes = max_num_boxes
 
     def __getitem__(self, index:int): # type: ignore
         image, targets = super().__getitem__(index)
@@ -123,7 +123,16 @@ class CocoBoundingBoxDataset(CocoDetection):
             label = torch.eye(self.num_classes)[index]
             output = torch.cat((bbox, confidence, label), dim=0)
             outputs.append(output)
-        output_tensor = torch.stack(outputs)
+        # TODO: images might not have objects
 
-        image_tensor, output_tensor = self.transform(image, output_tensor) # type: ignore
-        return image_tensor, output_tensor, output_tensor.shape[0]
+        if len(outputs) > 0:
+            output_tensor = torch.stack(outputs)
+            num_box_padding = self.max_num_boxes - output_tensor.shape[0]
+
+            image_tensor, output_tensor = self.transform(image, output_tensor) # type: ignore
+            padded_output = torch.cat((output_tensor, torch.zeros(num_box_padding, output_tensor.shape[1])), dim=0)
+            return image_tensor, padded_output, output_tensor.shape[0]
+        else:
+            image_tensor, _ = self.transform(image, None)
+            padded_output = torch.zeros(self.max_num_boxes, self.num_attributes)
+            return image_tensor, padded_output, 0

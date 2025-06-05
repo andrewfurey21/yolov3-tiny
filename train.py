@@ -1,14 +1,23 @@
 import torch
-import torchvision
-from yolov3tiny import data, draw
+from torch.utils.data import DataLoader, RandomSampler
+from yolov3tiny import data
+
+def collate_fn(sample):
+    images, labels, sizes = [], [], []
+    for image, label, size in sample:
+        images.append(image)
+        labels.append(label)
+        sizes.append(size)
+    return torch.stack(images), torch.stack(labels), torch.tensor(sizes)
 
 if __name__ == "__main__":
     torch.manual_seed(1234)
 
     # hyperparams
-    batch_size = 1 # 32
+    batch_size = 32 # 32
     image_size = 416
     num_classes = 80
+    max_num_boxes= 100
 
     names_from_paper = "./data/coco-paper.names"
     actual_names = "./data/coco.names"
@@ -20,14 +29,22 @@ if __name__ == "__main__":
         annotations="./data/annotations/instances_val2017.json",
         category_ids=keys,
         image_size=image_size,
-        num_classes=num_classes
+        num_classes=num_classes,
+        max_num_boxes=max_num_boxes
     )
 
-    image, labels, labels_size = dataset[0]
-    class_ids = torch.argmax(labels[..., 5:], dim=1).tolist()
-    class_names = [indices[id] for id in class_ids]
+    # image, labels, labels_size = dataset[0]
+    # class_ids = torch.argmax(labels[..., 5:], dim=1).tolist()
+    # class_names = [indices[id] for id in class_ids]
 
-    pil_image = torchvision.transforms.functional.to_pil_image(image) # type: ignore
-    output = draw.draw_bboxes(pil_image, labels[..., :4], class_names)
-    output.show()
+    # dataloading
+    sampler = RandomSampler(dataset)
+    dataloader = DataLoader(dataset,
+                            batch_size=batch_size,
+                            sampler=sampler,
+                            collate_fn=collate_fn)
+
+    image, labels, labels_size = next(iter(dataloader))
+    print(image.shape, labels.shape, labels_size.shape)
+
 

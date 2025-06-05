@@ -150,7 +150,7 @@ class YOLOLoss(torch.nn.Module):
     def forward(self, predictions: torch.Tensor, targets: torch.Tensor, num_targets: torch.Tensor):
         targets, target_indices = preprocess_targets(targets, num_targets, self.anchors, self.image_size)
         noobj_mask = no_object_mask(predictions, targets, self.ignore_thresh)
-        noobj_mask = no_object_mask_filter(noobj_mask, indices)
+        noobj_mask = no_object_mask_filter(noobj_mask, target_indices)
 
         # Loss
         # 1. no object loss: supress false positives
