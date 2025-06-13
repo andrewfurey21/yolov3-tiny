@@ -3,3 +3,4 @@ data/*
 .env
 **/wandb/*
 **/__pycache__/*
+extra/*

@@ -80,13 +80,12 @@ class ColorJitter(torchvision.transforms.ColorJitter):
     def __call__(self, image: torch.Tensor, label: torch.Tensor = None):
         return super().__call__(image), label
 
-# take in image and label and output (tensor, tensor) of correct shape
-# max_num_boxes?
 def prepare_for_training(image_size):
     return LabelCompose(
         [
             ToTensor(),
-            ColorJitter(brightness=1, contrast=1, saturation=1.5, hue=0.1),
+            ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),
+            # TODO: random flip, scaling, translation
             ToSquare(),
             Resize(image_size, image_size),
         ]
@@ -123,7 +122,6 @@ class CocoBoundingBoxDataset(CocoDetection):
             label = torch.eye(self.num_classes)[index]
             output = torch.cat((bbox, confidence, label), dim=0)
             outputs.append(output)
-        # TODO: images might not have objects
 
         if len(outputs) > 0:
             output_tensor = torch.stack(outputs)
