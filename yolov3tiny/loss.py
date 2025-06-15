@@ -1,7 +1,6 @@
 from typing import Tuple, List
 
 import torch
-# import torch.nn.functional as F
 
 def iou(bboxes1: torch.Tensor, bboxes2: torch.Tensor, center_aligned=False, center_to_topleft=False):
     """
@@ -11,7 +10,7 @@ def iou(bboxes1: torch.Tensor, bboxes2: torch.Tensor, center_aligned=False, cent
         bboxes2 shape: (batch_size, num_b2, 4)
 
         center_aligned: boxes center are aligned, useful for getting iou of anchor boxes to choose best one.
-        center_to_topleft: are boxes coords in format (cx, cy, w, h) or x,y in top left.
+        center_to_topleft: convert coords in format (cx, cy, w, h) (x,y, w, h)
 
         output: (batch_size, num_b1, num_b2)
     """
@@ -52,25 +51,18 @@ def iou(bboxes1: torch.Tensor, bboxes2: torch.Tensor, center_aligned=False, cent
     return intersection / (area1 + area2 - intersection + 1e-9) # might not need epsilon
 
 
-def no_object_mask(pred: torch.Tensor, target: torch.Tensor, ignore_thresh:float=0.5):
+def object_mask(pred: torch.Tensor, target: torch.Tensor):
     """
         Creates a mask, same shape as pred without box dims (batch_size, num_predictions),
-        1 == no prediction with a good iou in target
-        0 otherwise
+        1 == max iou with target
+        0 == otherwise
     """
     batch_size, num_boxes, num_attributes = pred.shape
     assert batch_size == target.shape[0] and num_attributes == target.shape[2]
-    ious = iou(pred[:4], target[:4])
-    max_ious, _ = torch.max(ious, dim=2)
-    return (max_ious < ignore_thresh).long()
-
-
-def no_object_mask_filter(noobj_mask: torch.Tensor, object_index: torch.Tensor):
-    """
-        noobj_mask: mask, 1 == no prediction with decent iou in targets
-        object_index: indices where theres an object (in target)
-    """
-    pass
+    ious = iou(pred[..., :4], target[..., :4], center_to_topleft=True)
+    _, max_ious_indices = torch.max(ious, dim=1)
+    mask = torch.zeros(batch_size, num_boxes).scatter_(1, max_ious_indices, 1).unsqueeze_(2)
+    return mask
 
 def preprocess_targets(target_batch: torch.Tensor, num_targets: torch.Tensor,
                        list_anchors: List[Tuple[int, int]], image_size:int):
