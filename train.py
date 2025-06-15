@@ -3,6 +3,8 @@ import torchvision
 from torch.utils.data import DataLoader, RandomSampler, dataloader
 from yolov3tiny import data, model, draw
 
+torch.set_printoptions(profile="full")
+
 def display_image_tensor(image: torch.Tensor, labels:torch.Tensor, size:int, num_classes:int):
     names_from_paper = "./data/coco-paper.names"
     actual_names = "./data/coco.names"
@@ -17,7 +19,7 @@ def display_image_tensor(image: torch.Tensor, labels:torch.Tensor, size:int, num
                      num_classes)
     pilimage.show() # type: ignore
 
-def build_dataloader(images_dir:str, annotations_dir:str):
+def build_dataloader(images_dir:str, annotations_dir:str, img_size):
     names_from_paper = "./data/coco-paper.names"
     actual_names = "./data/coco.names"
     keys, _ = data.get_names(names_from_paper, actual_names)
@@ -26,7 +28,7 @@ def build_dataloader(images_dir:str, annotations_dir:str):
         images=images_dir,
         annotations=annotations_dir,
         category_ids=keys,
-        image_size=image_size,
+        img_size=img_size,
         num_classes=num_classes,
         max_num_boxes=max_num_boxes
     )
@@ -49,8 +51,8 @@ if __name__ == "__main__":
     annotations_dir = "./data/annotations/instances_val2017.json"
 
     # hyperparams
-    batch_size = 1 # 32
-    image_size = 416
+    batch_size = 2 # 32
+    img_size = 416
     num_classes = 80
     max_num_boxes= 100
     anchors = [(10, 14), (23, 27), (37, 58), (81, 82), (135, 169), (344, 319)]
@@ -60,16 +62,18 @@ if __name__ == "__main__":
     # need way to set number of training steps
 
     # dataloader
-    dataloader = build_dataloader(images_dir, annotations_dir)
+    dataloader = build_dataloader(images_dir, annotations_dir, img_size)
 
     images, labels, labels_size = next(iter(dataloader))
     print("Input data shape: ", images.shape)
     print("Target labels shape: ", labels.shape)
     print("Number of labels: ", labels_size)
 
-    yolo_v3_tiny = model.YOLOv3tiny(num_classes)
+    yolo_v3_tiny = model.YOLOv3tiny(num_classes, anchors, img_size)
     output = yolo_v3_tiny(images)
 
-    display_image_tensor(images[0], labels[0], labels_size.item(), num_classes)
+    print(output.shape)
+
+    # display_image_tensor(images[0], labels[0], labels_size.item(), num_classes)
 
 

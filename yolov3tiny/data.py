@@ -80,30 +80,30 @@ class ColorJitter(torchvision.transforms.ColorJitter):
     def __call__(self, image: torch.Tensor, label: torch.Tensor = None):
         return super().__call__(image), label
 
-def prepare_for_training(image_size):
+def prepare_for_training(img_size:int):
     return LabelCompose(
         [
             ToTensor(),
             ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),
             # TODO: random flip, scaling, translation
             ToSquare(),
-            Resize(image_size, image_size),
+            Resize(img_size, img_size),
         ]
     )
 
-def prepare_for_inference(image_size):
+def prepare_for_inference(img_size:int):
     return LabelCompose(
         [
             ToTensor(),
             ToSquare(),
-            Resize(image_size, image_size),
+            Resize(img_size, img_size),
         ]
     )
 
 class CocoBoundingBoxDataset(CocoDetection):
-    def __init__(self, images:str, annotations:str, category_ids:dict, image_size:int, num_classes:int, max_num_boxes:int):
+    def __init__(self, images:str, annotations:str, category_ids:dict, img_size:int, num_classes:int, max_num_boxes:int):
         super().__init__(images, annotations)
-        self.transform = prepare_for_training(image_size)
+        self.transform = prepare_for_training(img_size)
         self.num_classes = num_classes
         self.num_attributes = num_classes + 5
         self.category_ids = category_ids
