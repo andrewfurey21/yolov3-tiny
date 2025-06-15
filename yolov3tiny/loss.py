@@ -54,7 +54,7 @@ def iou(bboxes1: torch.Tensor, bboxes2: torch.Tensor, center_aligned=False, cent
 def object_mask(pred: torch.Tensor, target: torch.Tensor):
     """
         Creates a mask, same shape as pred without box dims (batch_size, num_predictions),
-        1 == max iou with target
+        1 == largest iou with target
         0 == otherwise
     """
     batch_size, num_boxes, num_attributes = pred.shape
@@ -63,6 +63,20 @@ def object_mask(pred: torch.Tensor, target: torch.Tensor):
     _, max_ious_indices = torch.max(ious, dim=1)
     mask = torch.zeros(batch_size, num_boxes).scatter_(1, max_ious_indices, 1).unsqueeze_(2)
     return mask
+
+def ignore_mask(pred: torch.Tensor, target: torch.Tensor, ignore_thresh:float=0.5):
+    """
+        1 == iou > threshold
+        0 == iou <= threshold
+
+        If 1 and not in the object_mask, ignored in loss function.
+    """
+    batch_size, num_boxes, num_attributes = pred.shape
+    assert batch_size == target.shape[0] and num_attributes == target.shape[2]
+    ious = iou(pred[..., :4], target[..., :4], center_to_topleft=True)
+    max_ious, _ = torch.max(ious, dim=2)
+    return torch.where(max_ious > ignore_thresh, torch.ones((batch_size, num_boxes)), torch.zeros((batch_size, num_boxes))).unsqueeze_(2)
+
 
 def preprocess_targets(target_batch: torch.Tensor, num_targets: torch.Tensor,
                        list_anchors: List[Tuple[int, int]], image_size:int):
@@ -91,5 +105,5 @@ class YOLOLoss(torch.nn.Module):
         self.coord_coeff = coord_coeff
 
     def forward(self, predictions: torch.Tensor, targets: torch.Tensor, num_targets: torch.Tensor):
-        noobj_mask = no_object_mask(predictions, targets, self.ignore_thresh)
+        noobj_mask = object_mask(predictions, targets)
 

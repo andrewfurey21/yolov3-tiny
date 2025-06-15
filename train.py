@@ -2,7 +2,7 @@ import torch
 import torchvision
 from torch.utils.data import DataLoader, RandomSampler, dataloader
 from yolov3tiny import data, model, draw
-from yolov3tiny.loss import object_mask
+from yolov3tiny.loss import ignore_mask, object_mask
 
 torch.set_printoptions(profile="full")
 
@@ -73,11 +73,15 @@ if __name__ == "__main__":
     yolo_v3_tiny = model.YOLOv3tiny(num_classes, anchors, img_size)
     output = yolo_v3_tiny(images)
 
-    mask = object_mask(output, labels)
-    output = mask * output
-    guesses = len(torch.nonzero(mask).tolist())
+    ign_mask = ignore_mask(output, labels, ignore_thresh=0.7)
+    obj_mask = object_mask(output, labels)
+
+    # output = obj_mask * output
+    output = ign_mask * output
+    guesses = len(torch.nonzero(obj_mask).tolist())
     print("number of boxes: ", guesses)
-    print("mask shape: ", mask.shape)
+    print("object mask shape: ", obj_mask.shape)
+    print("ignore mask shape: ", ign_mask.shape)
 
     display_image_tensor(images[0], output[0], 2535, num_classes)
 
