@@ -23,7 +23,7 @@ def draw_bboxes(image:Image.Image,
     draw = ImageDraw.ImageDraw(image)
     for i, (box, class_name) in enumerate(zip(boxes, class_names)):
         colour = box_colour(class_ids[i], num_classes)
-        x, y, w, h = box
-        draw.rectangle((x, y, x+w, y+h), outline=colour, width=3)
-        draw.text((x, y), class_name, font=font, fill="black")
+        x1, y1, x2, y2 = box
+        draw.rectangle((x1, y1, x2, y2), outline=colour, width=3)
+        draw.text((x1, y1), class_name, font=font, fill="black")
     return image

@@ -1,6 +1,8 @@
 import torch
 from typing import List, Tuple
 
+from yolov3tiny.data import cxcywh_to_xyxy
+
 class Convolution(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, negative_slope=0.1):
         assert kernel_size == 1 or kernel_size == 3
@@ -24,13 +26,17 @@ class YOLOLayer(torch.nn.Module):
         self.img_size = img_size
 
     def forward(self, input):
-        batch_size, channels, grid_size, _grid_size = input.shape
+        batch_size, channels, width, height = input.shape
+        assert width == height
+        grid_size = width
+
         assert self.img_size % grid_size == 0
-        assert channels == self.num_attributes * 3
         stride = self.img_size // grid_size
 
+        assert channels == self.num_attributes * 3
+
         input = input.reshape(batch_size, 3, self.num_attributes, grid_size, grid_size) # (n,c,w,h) -> (n, 3, c/3, w, h)
-        input = input.permute(0, 1, 3, 4, 2) # (n, 3, w, h, c/3)
+        input = input.permute(0, 1, 3, 4, 2) # (n, 3, w, h, c/3), c/3 == self.num_attributes
 
         offset = torch.arange(grid_size).repeat(3, grid_size, 1) # (3, grid_size, grid_size)
         x_offset = offset.unsqueeze(0) # (1, 3, grid_size, grid_size)
@@ -47,6 +53,7 @@ class YOLOLayer(torch.nn.Module):
         h_pred = anchor_h * torch.exp(input[..., 3])
 
         bbox = torch.stack([x_pred, y_pred, w_pred, h_pred], dim=4)
+        bbox = cxcywh_to_xyxy(bbox)
 
         # objectness score
         conf = torch.sigmoid(input[..., 4]).unsqueeze(4)

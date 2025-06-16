@@ -2,11 +2,12 @@ import torch
 import torchvision
 from torch.utils.data import DataLoader, RandomSampler, dataloader
 from yolov3tiny import data, model, draw
-from yolov3tiny.loss import ignore_mask, object_mask
+from yolov3tiny.loss import YOLOLoss
 
 torch.set_printoptions(profile="full")
 
 def display_image_tensor(image: torch.Tensor, labels:torch.Tensor, size:int, num_classes:int):
+    assert size <= labels.shape[1]
     names_from_paper = "./data/coco-paper.names"
     actual_names = "./data/coco.names"
     _, indices = data.get_names(names_from_paper, actual_names)
@@ -52,15 +53,15 @@ if __name__ == "__main__":
     annotations_dir = "./data/annotations/instances_val2017.json"
 
     # hyperparams
-    batch_size = 1 # 32
+    batch_size = 2 # 32
     img_size = 416
     num_classes = 80
     max_num_boxes= 100
     anchors = [(10, 14), (23, 27), (37, 58), (81, 82), (135, 169), (344, 319)]
     ignore_thresh = 0.5
-    no_object_coeff = .5
+    no_object_coeff = 0.5
     coord_coeff = 5
-    # need way to set number of training steps
+    # need a param to set number of training steps
 
     # dataloader
     dataloader = coco_dataloader(images_dir, annotations_dir, img_size)
@@ -70,19 +71,18 @@ if __name__ == "__main__":
     print("Target labels shape: ", labels.shape)
     print("Number of labels: ", labels_size)
 
+    # model
     yolo_v3_tiny = model.YOLOv3tiny(num_classes, anchors, img_size)
+
+    # loss + optimizer
+    lossfn = YOLOLoss(ignore_thresh, no_object_coeff, coord_coeff, max_num_boxes)
+
+    # training loop
     output = yolo_v3_tiny(images)
 
-    ign_mask = ignore_mask(output, labels, ignore_thresh=0.7)
-    obj_mask = object_mask(output, labels)
+    loss = lossfn(output, labels, labels_size)
+    print("Loss: ", loss)
 
-    # output = obj_mask * output
-    output = ign_mask * output
-    guesses = len(torch.nonzero(obj_mask).tolist())
-    print("number of boxes: ", guesses)
-    print("object mask shape: ", obj_mask.shape)
-    print("ignore mask shape: ", ign_mask.shape)
-
-    display_image_tensor(images[0], output[0], 2535, num_classes)
+    display_image_tensor(images[1],  output[1], 15, num_classes)
 
 
