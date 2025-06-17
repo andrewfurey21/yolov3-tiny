@@ -22,35 +22,14 @@ def display_image_tensor(image: torch.Tensor, labels:torch.Tensor, size:int, num
                      num_classes)
     pilimage.show() # type: ignore
 
-def coco_dataloader(images_dir:str, annotations_dir:str, img_size):
-    names_from_paper = "./data/coco-paper.names"
-    actual_names = "./data/coco.names"
-    keys, _ = data.get_names(names_from_paper, actual_names)
-    # dataset
-    dataset = data.CocoBoundingBoxDataset(
-        images=images_dir,
-        annotations=annotations_dir,
-        category_ids=keys,
-        img_size=img_size,
-        num_classes=num_classes,
-        max_num_boxes=max_num_boxes
-    )
-
-    # dataloading
-    sampler = RandomSampler(dataset)
-    dataloader = DataLoader(dataset,
-                            batch_size=batch_size,
-                            sampler=sampler,
-                            collate_fn=data.collate_coco_sample)
-    return dataloader
 
 
 if __name__ == "__main__":
     torch.manual_seed(12345)
 
     # dataset
-    images_dir = "./data/val2017/"
-    annotations_dir = "./data/annotations/instances_val2017.json"
+    val_images_dir = "./data/val2017/"
+    val_annotations_dir = "./data/annotations/instances_val2017.json"
 
     # hyperparams
     batch_size = 1
@@ -66,7 +45,7 @@ if __name__ == "__main__":
     # need a param to set number of training steps
 
     # dataloader
-    dataloader = coco_dataloader(images_dir, annotations_dir, img_size)
+    dataloader = data.build_coco_dataloader(val_images_dir, val_annotations_dir, img_size, num_classes, max_num_boxes, batch_size, True, data.prepare_for_training)
 
     images, labels, labels_size = next(iter(dataloader))
     print("Input data shape: ", images.shape)

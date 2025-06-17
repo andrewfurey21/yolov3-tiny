@@ -1,7 +1,7 @@
 import torch
 import torchvision
 from torchvision.datasets import CocoDetection
-from typing import List, Any, Tuple
+
 
 from PIL import Image
 
@@ -145,9 +145,9 @@ def prepare_for_inference(img_size:int):
     )
 
 class CocoBoundingBoxDataset(CocoDetection):
-    def __init__(self, images:str, annotations:str, category_ids:dict, img_size:int, num_classes:int, max_num_boxes:int):
+    def __init__(self, images:str, annotations:str, category_ids:dict, img_size:int, num_classes:int, max_num_boxes:int, transform=prepare_for_inference):
         super().__init__(images, annotations)
-        self.transform = prepare_for_training(img_size)
+        self.transform = transform(img_size)
         self.num_classes = num_classes
         self.num_attributes = num_classes + 5
         self.category_ids = category_ids
@@ -180,11 +180,36 @@ class CocoBoundingBoxDataset(CocoDetection):
             padded_output = torch.zeros(self.max_num_boxes, self.num_attributes)
             return image_tensor, padded_output, 0
 
-def collate_coco_sample(sample):
-    images, labels, sizes = [], [], []
-    for image, label, size in sample:
-        images.append(image)
-        labels.append(label)
-        sizes.append(size)
-    return torch.stack(images), torch.stack(labels), torch.tensor(sizes)
+
+def build_coco_dataloader(images_dir:str, annotations_dir:str, img_size:int, num_classes:int, max_num_boxes:int, batch_size:int, replacement:bool, transform):
+    names_from_paper = "./data/coco-paper.names"
+    actual_names = "./data/coco.names"
+    keys, _ = get_names(names_from_paper, actual_names)
+    dataset = CocoBoundingBoxDataset(
+        images=images_dir,
+        annotations=annotations_dir,
+        category_ids=keys,
+        img_size=img_size,
+        num_classes=num_classes,
+        max_num_boxes=max_num_boxes,
+        transform=transform
+    )
+
+    def collate_coco_sample(sample):
+        images, labels, sizes = [], [], []
+        for image, label, size in sample:
+            images.append(image)
+            labels.append(label)
+            sizes.append(size)
+        return torch.stack(images), torch.stack(labels), torch.tensor(sizes)
+
+    # dataloading
+    sampler = torch.utils.data.RandomSampler(dataset, replacement=replacement)
+    dataloader = torch.utils.data.DataLoader(dataset,
+                            batch_size=batch_size,
+                            sampler=sampler,
+                            collate_fn=collate_coco_sample)
+    return dataloader
+
+
 
