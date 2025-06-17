@@ -55,13 +55,7 @@ class YOLOLayer(torch.nn.Module):
         bbox = torch.stack([x_pred, y_pred, w_pred, h_pred], dim=4)
         bbox = cxcywh_to_xyxy(bbox)
 
-        # objectness score
-        conf = torch.sigmoid(input[..., 4]).unsqueeze(4)
-
-        # class confidence scores
-        class_  = torch.softmax(input[..., 5:], dim=4)
-
-        return torch.cat([bbox, conf, class_], dim=4).reshape(batch_size, -1, self.num_attributes)
+        return torch.cat([bbox, input[..., 4:]], dim=4).reshape(batch_size, -1, self.num_attributes)
 
 class YOLOv3tiny(torch.nn.Module):
     def __init__(self, num_classes:int, anchors:List[Tuple[int, int]], img_size:int):

@@ -53,14 +53,16 @@ if __name__ == "__main__":
     annotations_dir = "./data/annotations/instances_val2017.json"
 
     # hyperparams
-    batch_size = 2 # 32
+    batch_size = 32
     img_size = 416
     num_classes = 80
     max_num_boxes= 100
     anchors = [(10, 14), (23, 27), (37, 58), (81, 82), (135, 169), (344, 319)]
-    ignore_thresh = 0.5
-    no_object_coeff = 0.5
-    coord_coeff = 5
+
+    coord_weight = 5
+    object_weight = 2
+    no_object_weight = 0.1
+    class_weight = 1
     # need a param to set number of training steps
 
     # dataloader
@@ -75,7 +77,7 @@ if __name__ == "__main__":
     yolo_v3_tiny = model.YOLOv3tiny(num_classes, anchors, img_size)
 
     # loss + optimizer
-    lossfn = YOLOLoss(ignore_thresh, no_object_coeff, coord_coeff, max_num_boxes)
+    lossfn = YOLOLoss(coord_weight, object_weight, no_object_weight, class_weight, max_num_boxes)
 
     # training loop
     output = yolo_v3_tiny(images)
@@ -83,6 +85,6 @@ if __name__ == "__main__":
     loss = lossfn(output, labels, labels_size)
     print("Loss: ", loss)
 
-    display_image_tensor(images[1],  output[1], 15, num_classes)
+    # display_image_tensor(images[1],  labels[1], labels_size[1].item(), num_classes)
 
 
