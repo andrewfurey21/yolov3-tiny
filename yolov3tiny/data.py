@@ -91,14 +91,47 @@ class ColorJitter(torchvision.transforms.ColorJitter):
     def __call__(self, image: torch.Tensor, label: torch.Tensor|None = None):
         return super().__call__(image), label
 
+class RandomHorizontalFlip(torchvision.transforms.RandomHorizontalFlip):
+    def __init__(self, img_size:int, p:float=0.5):
+        super().__init__(p)
+        self.p = p
+        self.img_size = img_size
+
+    def __call__(self, image: torch.Tensor, label: torch.Tensor|None = None):
+        flipped_image = image
+        if torch.rand(1) < self.p:
+            flipped_image = torchvision.transforms.functional.hflip(image) # type: ignore
+            if label != None:
+                bbox_w = label[..., 2] - label[..., 0]
+                label[..., 0] = self.img_size - label[..., 2]
+                label[..., 2] = label[..., 0] + bbox_w
+        return flipped_image, label
+
+class RandomVerticalFlip(torchvision.transforms.RandomVerticalFlip):
+    def __init__(self, img_size:int, p:float=0.5):
+        super().__init__(p)
+        self.p = p
+        self.img_size = img_size
+
+    def __call__(self, image: torch.Tensor, label: torch.Tensor|None = None):
+        flipped_image = image
+        if torch.rand(1) < self.p:
+            flipped_image = torchvision.transforms.functional.vflip(image) # type: ignore
+            if label != None:
+                bbox_h = label[..., 3] - label[..., 1]
+                label[..., 1] = self.img_size - label[..., 3]
+                label[..., 3] = label[..., 1] + bbox_h
+        return flipped_image, label
+
 def prepare_for_training(img_size:int):
     return LabelCompose(
         [
             ToTensor(),
             ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),
-            # TODO: random flip, scaling, translation
             ToSquare(),
             Resize(img_size, img_size),
+            RandomHorizontalFlip(img_size, p=1),
+            RandomVerticalFlip(img_size, p=1),
         ]
     )
 

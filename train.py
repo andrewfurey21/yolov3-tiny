@@ -53,7 +53,7 @@ if __name__ == "__main__":
     annotations_dir = "./data/annotations/instances_val2017.json"
 
     # hyperparams
-    batch_size = 32
+    batch_size = 1
     img_size = 416
     num_classes = 80
     max_num_boxes= 100
@@ -85,6 +85,6 @@ if __name__ == "__main__":
     loss = lossfn(output, labels, labels_size)
     print("Loss: ", loss)
 
-    # display_image_tensor(images[1],  labels[1], labels_size[1].item(), num_classes)
+    display_image_tensor(images[0],  labels[0], labels_size[0].item(), num_classes)
 
 
