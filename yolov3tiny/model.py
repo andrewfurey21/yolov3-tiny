@@ -19,8 +19,14 @@ class Convolution(torch.nn.Module):
 
 class LeftBottomPaddingMaxPool(torch.nn.Module):
     def __init__(self, padding:Tuple, fill:float, kernel_size:int, stride:int):
+        super().__init__()
         self.pad = torch.nn.ConstantPad2d(padding, fill)
         self.maxpool = torch.nn.MaxPool2d(kernel_size, stride=stride)
+
+    def forward(self, input:torch.Tensor):
+        output = self.pad(input)
+        output = self.maxpool(output)
+        return output
 
 class YOLOLayer(torch.nn.Module):
     def __init__(self, num_attributes:int, anchors:List[Tuple[int, int]], img_size:int):
@@ -145,8 +151,8 @@ class YOLOv3tinyPretrain(torch.nn.Module):
         self.upsample_18 = torch.nn.UpsamplingNearest2d(scale_factor=2)
         self.conv_layer_19 = Convolution(384, 256, 3)
 
-        self.global_average_pool_20 = torch.nn.AvgPool2d(kernel_size=14, stride=1)
-        self.dense_21 = torch.nn.Linear(384, num_classes, bias=True)
+        self.global_average_pool_20 = torch.nn.AvgPool2d(kernel_size=14)
+        self.dense_21 = torch.nn.Linear(256, num_classes, bias=True)
 
     def forward(self, input:torch.Tensor):
         a0 = self.conv_layer_0(input)
