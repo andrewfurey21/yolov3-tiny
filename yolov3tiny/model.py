@@ -17,6 +17,11 @@ class Convolution(torch.nn.Module):
         output = self.batch_norm(output)
         return self.leaky_relu(output)
 
+class LeftBottomPaddingMaxPool(torch.nn.Module):
+    def __init__(self, padding:Tuple, fill:float, kernel_size:int, stride:int):
+        self.pad = torch.nn.ConstantPad2d(padding, fill)
+        self.maxpool = torch.nn.MaxPool2d(kernel_size, stride=stride)
+
 class YOLOLayer(torch.nn.Module):
     def __init__(self, num_attributes:int, anchors:List[Tuple[int, int]], img_size:int):
         super().__init__()
@@ -63,13 +68,14 @@ class YOLOv3tiny(torch.nn.Module):
         self.num_attributes = num_classes + 5
         self.maxpool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # layers numbered based off yolov3-tiny architecture diagram.
         self.conv_layer_0 = Convolution(3, 16, 3)
         self.conv_layer_2 = Convolution(16, 32, 3)
         self.conv_layer_4 = Convolution(32, 64, 3)
         self.conv_layer_6 = Convolution(64, 128, 3)
         self.conv_layer_8 = Convolution(128, 256, 3)
         self.conv_layer_10 = Convolution(256, 512, 3)
+
+        self.maxpool_11 = LeftBottomPaddingMaxPool((0, 1, 0, 1), float('-inf'), 2, 1)
         self.conv_layer_12 = Convolution(512, 1024, 3)
 
         self.conv_layer_13 = Convolution(1024, 256, 1)
@@ -77,12 +83,13 @@ class YOLOv3tiny(torch.nn.Module):
         self.conv_layer_14 = Convolution(256, 512, 3)
         self.conv_layer_15 = Convolution(512, 3 * self.num_attributes, 1)
 
-        self.conv_layer_18 = Convolution(256, 128, 1)
-        self.conv_layer_21 = Convolution(384, 256, 3)
-        self.conv_layer_22 = Convolution(256, 3 * self.num_attributes, 1)
+        self.conv_layer_17 = Convolution(256, 128, 1)
+        self.upsample_18 = torch.nn.UpsamplingNearest2d(scale_factor=2)
+        self.conv_layer_19 = Convolution(384, 256, 3)
+        self.conv_layer_20 = Convolution(256, 3 * self.num_attributes, 1)
 
-        self.yolo_layer = YOLOLayer(self.num_attributes, anchors[3:], img_size)
-        self.yolo_layer_upsampled = YOLOLayer(self.num_attributes, anchors[:3], img_size)
+        self.yolo_layer_16 = YOLOLayer(self.num_attributes, anchors[3:], img_size)
+        self.yolo_layer_21 = YOLOLayer(self.num_attributes, anchors[:3], img_size)
 
 
     def forward(self, input):
@@ -99,30 +106,28 @@ class YOLOv3tiny(torch.nn.Module):
         a9 = self.maxpool(a8)
         a10 = self.conv_layer_10(a9)
 
-        pad_a10 = torch.nn.ConstantPad2d((0, 1, 0, 1), float('-inf'))(a10)
-        a11 = torch.nn.MaxPool2d(kernel_size=2, stride=1)(pad_a10)
+        a11 = self.maxpool_11(a10)
         a12 = self.conv_layer_12(a11)
         a13 = self.conv_layer_13(a12)
 
         a14 = self.conv_layer_14(a13)
         a15 = self.conv_layer_15(a14)
-        output_1 = self.yolo_layer(a15)
+        a16 = self.yolo_layer_16(a15)
 
-        a18 = self.conv_layer_18(a13)
-        a19 = torch.nn.UpsamplingNearest2d(scale_factor=2)(a18)
-        a20 = torch.cat([a19, a8], dim=1)
-        a21 = self.conv_layer_21(a20)
-        a22 = self.conv_layer_22(a21)
-        output_2 = self.yolo_layer_upsampled(a22)
+        a17 = self.conv_layer_17(a13)
+        a18 = self.upsample_18(a17)
+        a18a8 = torch.cat([a18, a8], dim=1)
+        a19 = self.conv_layer_19(a18a8)
+        a20 = self.conv_layer_20(a19)
+        a21 = self.yolo_layer_21(a20)
 
-        return torch.cat([output_1, output_2], dim=1)
+        return torch.cat([a16, a21], dim=1)
 
-class YOLOv3tinyImageNet(torch.nn.Module):
+class YOLOv3tinyPretrain(torch.nn.Module):
     def __init__(self, num_classes:int):
         super().__init__()
         self.num_attributes = num_classes
         self.maxpool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
-        self.global_average_pool = torch.nn.AvgPool2d(kernel_size=14, stride=1)
 
         self.conv_layer_0 = Convolution(3, 16, 3)
         self.conv_layer_2 = Convolution(16, 32, 3)
@@ -130,13 +135,18 @@ class YOLOv3tinyImageNet(torch.nn.Module):
         self.conv_layer_6 = Convolution(64, 128, 3)
         self.conv_layer_8 = Convolution(128, 256, 3)
         self.conv_layer_10 = Convolution(256, 512, 3)
+
+        self.maxpool_11 = LeftBottomPaddingMaxPool((0, 1, 0, 1), float('-inf'), 2, 1)
         self.conv_layer_12 = Convolution(512, 1024, 3)
 
         self.conv_layer_13 = Convolution(1024, 256, 1)
 
-        self.conv_layer_18 = Convolution(256, 128, 1)
+        self.conv_layer_17 = Convolution(256, 128, 1)
+        self.upsample_18 = torch.nn.UpsamplingNearest2d(scale_factor=2)
+        self.conv_layer_19 = Convolution(384, 256, 3)
 
-        self.dense = torch.nn.Linear(384, 1000, bias=True)
+        self.global_average_pool_20 = torch.nn.AvgPool2d(kernel_size=14, stride=1)
+        self.dense_21 = torch.nn.Linear(384, num_classes, bias=True)
 
     def forward(self, input:torch.Tensor):
         a0 = self.conv_layer_0(input)
@@ -152,18 +162,17 @@ class YOLOv3tinyImageNet(torch.nn.Module):
         a9 = self.maxpool(a8)
         a10 = self.conv_layer_10(a9)
 
-        pad_a10 = torch.nn.ConstantPad2d((0, 1, 0, 1), float('-inf'))(a10)
-        a11 = torch.nn.MaxPool2d(kernel_size=2, stride=1)(pad_a10)
+        a11 = self.maxpool_11(a10)
         a12 = self.conv_layer_12(a11)
         a13 = self.conv_layer_13(a12)
 
-        a18 = self.conv_layer_18(a13)
-        a19 = torch.nn.UpsamplingNearest2d(scale_factor=2)(a18)
-        a20 = torch.cat([a19, a8], dim=1)
+        a17 = self.conv_layer_17(a13)
+        a18 = self.upsample_18(a17)
+        a18a8 = torch.cat([a18, a8], dim=1)
+        a19 = self.conv_layer_19(a18a8)
 
         # imagenet classification
-        a21 = self.global_average_pool(a20)
-        a22 = torch.flatten(a21, start_dim=1)
-        a23 = self.dense(a22)
+        a20 = self.global_average_pool_20(a19).flatten(start_dim=1)
+        a21 = self.dense_21(a20)
 
-        return a23
+        return a21

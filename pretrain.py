@@ -40,7 +40,7 @@ if __name__ == "__main__":
     num_classes = 1000
 
     # model
-    pretrain_model = model.YOLOv3tinyImageNet(num_classes)
+    pretrain_model = model.YOLOv3tinyPretrain(num_classes)
     test_input = torch.rand((2, 3, 224, 224))
     print(test_input.shape)
     test_output = pretrain_model(test_input)
