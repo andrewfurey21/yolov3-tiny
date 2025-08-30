@@ -52,13 +52,12 @@ if __name__ == "__main__":
     optim = torch.optim.AdamW(pretrain_model.parameters(), lr=lr, betas=adamw_betas, weight_decay=weight_decay)
     # optim = torch.optim.AdamW(pretrain_model.parameters(), lr=lr, betas=adamw_betas, weight_decay=weight_decay, fused=True, capturable=True)
 
+    lossfn = torch.nn.CrossEntropyLoss()
+
     # example
     input = torch.rand((2, 3, 224, 224))
     output = pretrain_model(input)
 
-
-
-
-
-
-
+    actual = torch.rand((2, 1000))
+    loss = lossfn(output, actual)
+    print(f"Loss: {loss}")
