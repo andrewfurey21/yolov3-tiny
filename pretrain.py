@@ -41,6 +41,8 @@ if __name__ == "__main__":
     batch_size = 1
     img_size = 416
     num_classes = 1000
+    step_size = 400_000
+    gamma = 0.1
 
     #device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -52,12 +54,21 @@ if __name__ == "__main__":
     optim = torch.optim.AdamW(pretrain_model.parameters(), lr=lr, betas=adamw_betas, weight_decay=weight_decay)
     # optim = torch.optim.AdamW(pretrain_model.parameters(), lr=lr, betas=adamw_betas, weight_decay=weight_decay, fused=True, capturable=True)
 
+    # loss + learning rate scheduling
     lossfn = torch.nn.CrossEntropyLoss()
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optim, step_size=step_size, gamma=gamma)
 
     # example
-    input = torch.rand((2, 3, 224, 224))
-    output = pretrain_model(input)
+    for i in range(100):
+        input = torch.rand((2, 3, 224, 224))
+        output = pretrain_model(input)
 
-    actual = torch.rand((2, 1000))
-    loss = lossfn(output, actual)
-    print(f"Loss: {loss}")
+        actual = torch.rand((2, 1000))
+        loss = lossfn(output, actual)
+        print(f"Loss: {loss}")
+
+        loss.backward()
+        optim.step()
+        lr_scheduler.step()
+
+        print(f"Epoch {i+1}: LR={lr_scheduler.get_last_lr()}")
