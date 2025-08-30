@@ -25,6 +25,9 @@ if __name__ == "__main__":
     torch.manual_seed(12345)
 
     lr = 0.001
+    adamw_betas = (0.9, 0.999)
+    weight_decay = 0.01
+
     batch_size = 64
     subdivision = 2
     momentum = 0.9
@@ -39,12 +42,23 @@ if __name__ == "__main__":
     img_size = 416
     num_classes = 1000
 
-    # model
-    pretrain_model = model.YOLOv3tinyPretrain(num_classes)
+    #device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    test_input = torch.rand((2, 3, 224, 224))
-    print(test_input.shape)
-    test_output = pretrain_model(test_input)
-    print(test_output.shape)
+    # model
+    pretrain_model = model.YOLOv3tinyPretrain(num_classes).to(device)
+
+    # optimizer
+    optim = torch.optim.AdamW(pretrain_model.parameters(), lr=lr, betas=adamw_betas, weight_decay=weight_decay)
+    # optim = torch.optim.AdamW(pretrain_model.parameters(), lr=lr, betas=adamw_betas, weight_decay=weight_decay, fused=True, capturable=True)
+
+    # example
+    input = torch.rand((2, 3, 224, 224))
+    output = pretrain_model(input)
+
+
+
+
+
 
 
