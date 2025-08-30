@@ -1,39 +1,35 @@
 import torch
 import torchvision
 import wandb
-from yolov3tiny import data, model, draw
+from yolov3tiny import model
 
 import os
 from datetime import datetime
-os.makedirs(name="./checkpoints", exist_ok=True)
+from dotenv import load_dotenv
 
-def display_image_tensor(image: torch.Tensor, labels:torch.Tensor, size:int, num_classes:int):
-    assert size <= labels.shape[1]
-    names_from_paper = "./data/coco-paper.names"
-    actual_names = "./data/coco.names"
-    _, indices = data.get_names(names_from_paper, actual_names)
-    class_ids = torch.argmax(labels[:size, 5:], dim=1).tolist()
-    class_names = [indices[id] for id in class_ids]
-    pilimage = torchvision.transforms.functional.to_pil_image(image) # type: ignore
+CHECKPOINTS = "checkpoints"
 
-    draw.draw_bboxes(pilimage,
-                     labels[:size, :4].tolist(),
-                     class_names,
-                     class_ids,
-                     num_classes)
-    pilimage.show() # type: ignore
-
-# TODO: make directory with unique name in checkpoints so that different training runs can be saved.
-def checkpoint(epoch:int, model:model.YOLOv3tinyPretrain, optimizer:torch.optim.Optimizer, loss:float):
+def save_checkpoint(id:str, epoch:int, model:model.YOLOv3tinyPretrain, optimizer:torch.optim.Optimizer, loss:float):
+    os.makedirs(name=f"./{CHECKPOINTS}/{id}", exist_ok=True)
     torch.save({
         "epoch": epoch,
         "model": model.state_dict(),
         "optim": optimizer.state_dict(),
         "loss": loss,
-    }, f"./checkpoints/epoch_{epoch}_loss_{loss:.4f}.pt")
+    }, f"./{CHECKPOINTS}/{id}/epoch_{epoch}_loss_{loss:.4f}_.pt")
+
+def get_latest_checkpoint(best_loss=False):
+    """
+        get the latest checkpoint. if best_loss, get the checkpoint with best loss, else get the latest one (largest epoch)
+    """
+    index = 3 if best_loss else 1
+    files = {float(entry.name.split("_")[index]):entry.name for entry in os.scandir(f"./{CHECKPOINTS}/")}
+    return files[reversed(sorted([float(entry.name.split("_")[index]) for entry in os.scandir(f"./{CHECKPOINTS}/")])).__next__()]
 
 if __name__ == "__main__":
     torch.manual_seed(12345)
+    load_dotenv()
+    os.makedirs(name=CHECKPOINTS, exist_ok=True)
 
     # optimizer
     lr = 0.001
@@ -55,11 +51,8 @@ if __name__ == "__main__":
     exposure = 1.5
     hue = 0.1
 
-
-    #device
+    # device and model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # model
     pretrain_model = model.YOLOv3tinyPretrain(num_classes).to(device)
 
     # optimizer
@@ -72,21 +65,24 @@ if __name__ == "__main__":
     # logging
     save_interval = 1000
     run_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+
     pretraining_log = wandb.init(
-        entity="andrewfurey2003",
-        project="yolov3-tiny-pytorch",
+        entity=os.getenv("ENTITY"),
+        project=os.getenv("PROJECT"),
         name=run_name,
         group="pretraining-imagenet",
-        config= {
-            "learning_rate": lr,
-            "architecture": "yolov3-tiny",
-            "dataset": "ImageNet",
-        },
         mode="online",
     )
 
+    if os.getenv("LOAD") != None:
+        best_loss = True if int(os.getenv("LOAD")) == 1 else False # type: ignore
+        checkpoint_file_name = get_latest_checkpoint(best_loss=best_loss)
+        load = f"Using weights from checkpoint: {checkpoint_file_name}"
+        # pretraining_log.notes = load ; pretraining_log.save(); # print(load)
+        pretrain_model.load_state_dict(torch.load(f"./{CHECKPOINTS}/{checkpoint_file_name}")["model"])
+
     # example
-    for i in range(100):
+    for i in range(4):
         input = torch.rand((2, 3, 224, 224))
         output = pretrain_model(input)
 
@@ -100,7 +96,8 @@ if __name__ == "__main__":
         print(f"Epoch {i+1}: Loss={loss}, LR={lr_scheduler.get_last_lr()}")
 
         if i % save_interval == 0:
-            checkpoint(i, pretrain_model, optim, loss)
-        pretraining_log.log({"Loss": loss})
+            save_checkpoint(wandb.run.id, i, pretrain_model, optim, loss) # type: ignore
+            # TODO: validation
+            # pretraining_log.log({"Loss": loss})
 
     pretraining_log.finish()

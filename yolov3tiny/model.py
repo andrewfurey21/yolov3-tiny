@@ -3,21 +3,6 @@ from typing import List, Tuple
 
 from yolov3tiny.data import cxcywh_to_xyxy
 
-class ModuleIO(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.file_name = f"{self.__class__.__name__}.pt"
-
-    def save(self):
-        torch.save(self.state_dict(), self.file_name)
-
-    def load(self):
-        self.load_state_dict(torch.load(self.file_name))
-
-    def copy_weights(self, other_state_dict):
-        self.load_state_dict(other_state_dict, strict=False)
-
-
 class Convolution(torch.nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, negative_slope=0.1):
         assert kernel_size == 1 or kernel_size == 3
@@ -83,7 +68,7 @@ class YOLOLayer(torch.nn.Module):
 
         return torch.cat([bbox, input[..., 4:]], dim=4).reshape(batch_size, -1, self.num_attributes)
 
-class YOLOv3tiny(ModuleIO):
+class YOLOv3tiny(torch.nn.Module):
     def __init__(self, num_classes:int, anchors:List[Tuple[int, int]], img_size:int):
         super().__init__()
         self.num_attributes = num_classes + 5
@@ -144,7 +129,7 @@ class YOLOv3tiny(ModuleIO):
 
         return torch.cat([a16, a21], dim=1)
 
-class YOLOv3tinyPretrain(ModuleIO):
+class YOLOv3tinyPretrain(torch.nn.Module):
     def __init__(self, num_classes:int):
         super().__init__()
         self.num_attributes = num_classes
