@@ -51,7 +51,6 @@ if __name__ == "__main__":
             "dataset": "ImageNet",
         },
         mode="online",
-        save_code=True,
     )
 
     epochs = 10

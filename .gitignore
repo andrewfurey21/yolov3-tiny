@@ -5,3 +5,4 @@ data/val2017/*
 **/wandb/*
 **/__pycache__/*
 extra/*
+checkpoints/*

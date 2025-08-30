@@ -9,7 +9,7 @@ class ModuleIO(torch.nn.Module):
         self.file_name = f"{self.__class__.__name__}.pt"
 
     def save(self):
-        torch.save(self.state_dict, self.file_name)
+        torch.save(self.state_dict(), self.file_name)
 
     def load(self):
         self.load_state_dict(torch.load(self.file_name))
