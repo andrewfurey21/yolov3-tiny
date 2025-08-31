@@ -8,7 +8,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 import wandb
-from tqdm import tqdm
+from tqdm import tqdm, trange
 
 CHECKPOINTS = "checkpoints"
 
@@ -39,19 +39,20 @@ if __name__ == "__main__":
     os.makedirs(name=CHECKPOINTS, exist_ok=True)
 
     # optimizer
-    lr = 0.001
-    adamw_betas = (0.9, 0.999)
-    weight_decay = 0.01
+    lr = 0.0001
+    momentum = 0.9
+    weight_decay = 0.00001
+    nesterov = True
 
     # hyperparams
-    epochs = 2
-    batch_size = 2
+    epochs = 200
+    batch_size = 32
     img_size = 224
     num_classes = 1000
 
     # lr schedule (StepLR)
-    step_size = 400_000
-    gamma = 0.1
+    step_size = 10000
+    gamma = 0.9
 
     # data augmentation
     brightness = 0.5
