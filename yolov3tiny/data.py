@@ -46,6 +46,15 @@ def prepare_for_pretraining(img_size, brightness, contrast, saturation, hue):
     )
     return transform
 
+def prepare_for_validation(img_size):
+    transform = torchvision.transforms.Compose(
+        [
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Resize((img_size, img_size)),
+        ]
+    )
+    return transform
+
 class LabelCompose(torchvision.transforms.Compose):
     def __call__(self, image: Image.Image, label:torch.Tensor|None = None):
         for transform in self.transforms:
