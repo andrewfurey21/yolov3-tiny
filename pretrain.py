@@ -51,6 +51,12 @@ if __name__ == "__main__":
     exposure = 1.5
     hue = 0.1
 
+    # dataset and dataloader
+    imagenet_dir = os.getenv("IMAGENET")
+    assert imagenet_dir
+    imagenet_dataset = torchvision.datasets.ImageNet(imagenet_dir, split="val")
+    print("Dataset loaded")
+
     # device and model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     pretrain_model = model.YOLOv3tinyPretrain(num_classes).to(device)
@@ -78,26 +84,25 @@ if __name__ == "__main__":
         best_loss = True if int(os.getenv("LOAD")) == 1 else False # type: ignore
         checkpoint_file_name = get_latest_checkpoint(best_loss=best_loss)
         load = f"Using weights from checkpoint: {checkpoint_file_name}"
-        # pretraining_log.notes = load ; pretraining_log.save(); # print(load)
+        pretraining_log.notes = load
+        pretraining_log.save();
+
         pretrain_model.load_state_dict(torch.load(f"./{CHECKPOINTS}/{checkpoint_file_name}")["model"])
 
     # example
     for i in range(4):
-        input = torch.rand((2, 3, 224, 224))
+        input = torch.rand((batch_size, 3, 224, 224))
         output = pretrain_model(input)
+        actual = torch.rand((batch_size, 1000))
 
-        actual = torch.rand((2, 1000))
         loss = lossfn(output, actual)
-
         loss.backward()
         optim.step()
         lr_scheduler.step()
 
-        print(f"Epoch {i+1}: Loss={loss}, LR={lr_scheduler.get_last_lr()}")
-
         if i % save_interval == 0:
             save_checkpoint(wandb.run.id, i, pretrain_model, optim, loss) # type: ignore
             # TODO: validation
-            # pretraining_log.log({"Loss": loss})
+            # pretraining_log.log({"val_loss": loss})
 
     pretraining_log.finish()

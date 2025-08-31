@@ -1,5 +1,6 @@
 data/annotations/*
 data/val2017/*
+data/*
 **/.mypy_cache/*
 .env
 **/wandb/*
