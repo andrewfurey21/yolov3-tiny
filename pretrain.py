@@ -1,13 +1,17 @@
 import torch
 import torchvision
 import wandb
-from yolov3tiny import model
+from yolov3tiny import model, data
 
 import os
 from datetime import datetime
 from dotenv import load_dotenv
 
 CHECKPOINTS = "checkpoints"
+
+def display_image_tensor(image: torch.Tensor):
+    pilimage = torchvision.transforms.functional.to_pil_image(image) # type: ignore
+    pilimage.show()
 
 def save_checkpoint(id:str, epoch:int, model:model.YOLOv3tinyPretrain, optimizer:torch.optim.Optimizer, loss:float):
     os.makedirs(name=f"./{CHECKPOINTS}/{id}", exist_ok=True)
@@ -37,9 +41,9 @@ if __name__ == "__main__":
     weight_decay = 0.01
 
     # hyperparams
-    epochs = 10
-    batch_size = 2
-    img_size = 416
+    epochs = 2 
+    batch_size = 1
+    img_size = 224
     num_classes = 1000
 
     # lr schedule (StepLR)
@@ -53,16 +57,16 @@ if __name__ == "__main__":
 
     # dataset and dataloader
     imagenet_dir = os.getenv("IMAGENET")
-    assert imagenet_dir
-    imagenet_dataset = torchvision.datasets.ImageNet(imagenet_dir, split="val")
-    print("Dataset loaded")
+    assert imagenet_dir, "Must set imagenet root directory"
+    dataloader = data.build_imagenet_dataloader(imagenet_dir, img_size, batch_size)
 
     # device and model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     pretrain_model = model.YOLOv3tinyPretrain(num_classes).to(device)
+    pretrain_model.train()
 
     # optimizer
-    optim = torch.optim.AdamW(pretrain_model.parameters(), lr=lr, betas=adamw_betas, weight_decay=weight_decay) # set fused and capturable
+    optim = torch.optim.AdamW(pretrain_model.parameters(), lr=lr, betas=adamw_betas, weight_decay=weight_decay) # TODO: set fused and capturable
 
     # loss + learning rate scheduling
     lossfn = torch.nn.CrossEntropyLoss()
@@ -72,37 +76,36 @@ if __name__ == "__main__":
     save_interval = 1000
     run_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
-    pretraining_log = wandb.init(
-        entity=os.getenv("ENTITY"),
-        project=os.getenv("PROJECT"),
-        name=run_name,
-        group="pretraining-imagenet",
-        mode="online",
-    )
+    # pretraining_log = wandb.init(
+    #     entity=os.getenv("ENTITY"),
+    #     project=os.getenv("PROJECT"),
+    #     name=run_name,
+    #     group="pretraining-imagenet",
+    #     mode="online",
+    # )
 
     if os.getenv("LOAD") != None:
         best_loss = True if int(os.getenv("LOAD")) == 1 else False # type: ignore
         checkpoint_file_name = get_latest_checkpoint(best_loss=best_loss)
         load = f"Using weights from checkpoint: {checkpoint_file_name}"
-        pretraining_log.notes = load
-        pretraining_log.save();
+        # pretraining_log.notes = load
+        # pretraining_log.save();
 
         pretrain_model.load_state_dict(torch.load(f"./{CHECKPOINTS}/{checkpoint_file_name}")["model"])
 
     # example
-    for i in range(4):
-        input = torch.rand((batch_size, 3, 224, 224))
-        output = pretrain_model(input)
-        actual = torch.rand((batch_size, 1000))
+    for epoch in range(epochs):
+        for xbatch, ybatch in dataloader:
+            ypred = pretrain_model(xbatch)
+            loss = lossfn(ypred, ybatch)
+            loss.backward()
+            optim.step()
+            lr_scheduler.step()
+            print("Loss: ", loss)
 
-        loss = lossfn(output, actual)
-        loss.backward()
-        optim.step()
-        lr_scheduler.step()
+        # if epoch % save_interval == 0:
+        #     save_checkpoint(wandb.run.id, i, pretrain_model, optim, loss) # type: ignore
+        #     # TODO: validation
+        #     # pretraining_log.log({"val_loss": loss})
 
-        if i % save_interval == 0:
-            save_checkpoint(wandb.run.id, i, pretrain_model, optim, loss) # type: ignore
-            # TODO: validation
-            # pretraining_log.log({"val_loss": loss})
-
-    pretraining_log.finish()
+    # pretraining_log.finish()

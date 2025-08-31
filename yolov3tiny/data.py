@@ -1,7 +1,7 @@
 import torch
 import torchvision
+from torchvision.transforms.functional import to_tensor
 from torchvision.datasets import CocoDetection
-
 
 from PIL import Image
 
@@ -34,6 +34,15 @@ def get_names(names_from_paper:str, actual_names:str):
 
     return keys, indices
 
+def prepare_for_pretraining(img_size:int):
+    transform = torchvision.transforms.Compose(
+        [
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.ConvertImageDtype(torch.float),
+            torchvision.transforms.Resize((img_size, img_size)),
+        ]
+    )
+    return transform
 
 class LabelCompose(torchvision.transforms.Compose):
     def __call__(self, image: Image.Image, label:torch.Tensor|None = None):
@@ -41,7 +50,7 @@ class LabelCompose(torchvision.transforms.Compose):
             image, label = transform(image, label)
         return image, label
 
-class ToSquare:
+class LabelToSquare:
     def __init__(self, fill=127):
         self.fill = fill
 
@@ -63,7 +72,7 @@ class ToSquare:
         padded_image = torchvision.transforms.functional.pad(image, padding, self.fill) # type: ignore
         return padded_image, label
 
-class Resize:
+class LabelResize:
     def __init__(self, width:int, height:int):
         self.width = width
         self.height = height 
@@ -80,18 +89,18 @@ class Resize:
         image = torch.nn.functional.interpolate(image.unsqueeze(0), size=(self.width, self.height), mode="bilinear")
         return image.squeeze(0), label
 
-class ToTensor:
+class LabelToTensor:
     def __call__(self, image: Image.Image, label: torch.Tensor|None = None):
         return torchvision.transforms.functional.to_tensor(image), label # type: ignore
 
-class ColorJitter(torchvision.transforms.ColorJitter):
+class LabelColorJitter(torchvision.transforms.ColorJitter):
     def __init__(self, brightness, contrast, saturation, hue):
         super().__init__(brightness, contrast, saturation, hue)
 
     def __call__(self, image: torch.Tensor, label: torch.Tensor|None = None):
         return super().__call__(image), label
 
-class RandomHorizontalFlip(torchvision.transforms.RandomHorizontalFlip):
+class LabelRandomHorizontalLfip(torchvision.transforms.RandomHorizontalFlip):
     def __init__(self, img_size:int, p:float=0.5):
         super().__init__(p)
         self.p = p
@@ -107,7 +116,7 @@ class RandomHorizontalFlip(torchvision.transforms.RandomHorizontalFlip):
                 label[..., 2] = label[..., 0] + bbox_w
         return flipped_image, label
 
-class RandomVerticalFlip(torchvision.transforms.RandomVerticalFlip):
+class LabelRandomVerticalFlip(torchvision.transforms.RandomVerticalFlip):
     def __init__(self, img_size:int, p:float=0.5):
         super().__init__(p)
         self.p = p
@@ -126,21 +135,21 @@ class RandomVerticalFlip(torchvision.transforms.RandomVerticalFlip):
 def prepare_for_training(img_size:int):
     return LabelCompose(
         [
-            ToTensor(),
-            ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),
-            ToSquare(),
-            Resize(img_size, img_size),
-            RandomHorizontalFlip(img_size, p=1),
-            RandomVerticalFlip(img_size, p=1),
+            LabelToTensor(),
+            LabelColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),
+            LabelToSquare(),
+            LabelResize(img_size, img_size),
+            LabelRandomHorizontalLfip(img_size, p=1),
+            LabelRandomVerticalFlip(img_size, p=1),
         ]
     )
 
 def prepare_for_inference(img_size:int):
     return LabelCompose(
         [
-            ToTensor(),
-            ToSquare(),
-            Resize(img_size, img_size),
+            LabelToTensor(),
+            LabelToSquare(),
+            LabelResize(img_size, img_size),
         ]
     )
 
@@ -211,5 +220,15 @@ def build_coco_dataloader(images_dir:str, annotations_dir:str, img_size:int, num
                             collate_fn=collate_coco_sample)
     return dataloader
 
-
-
+def build_imagenet_dataloader(imagenet_dir:str, img_size:int, batch_size:int):
+    def collage_imagenet_sample(sample):
+        images, labels = [], []
+        for image, label in sample:
+            images.append(image)
+            labels.append(label)
+        return torch.stack(images, dim=0), torch.tensor(labels)
+    imagenet_dataset = torchvision.datasets.ImageNet(imagenet_dir, split="val", transform=prepare_for_pretraining(img_size))
+    sampler = torch.utils.data.RandomSampler(imagenet_dataset, replacement=False)
+    return torch.utils.data.DataLoader(
+        imagenet_dataset, batch_size=batch_size, sampler=sampler, collate_fn=collage_imagenet_sample
+    )

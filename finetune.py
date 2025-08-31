@@ -46,9 +46,8 @@ if __name__ == "__main__":
         name=run_name,
         group="pretraining-imagenet",
         config= {
-            "learning_rate": lr,
             "architecture": "yolov3-tiny",
-            "dataset": "ImageNet",
+            "dataset": "COCO",
         },
         mode="online",
     )
