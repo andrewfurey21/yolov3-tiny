@@ -1,11 +1,14 @@
 import torch
 import torchvision
-import wandb
+
 from yolov3tiny import model, data
 
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+
+import wandb
+from tqdm import tqdm
 
 CHECKPOINTS = "checkpoints"
 
@@ -41,8 +44,8 @@ if __name__ == "__main__":
     weight_decay = 0.01
 
     # hyperparams
-    epochs = 2 
-    batch_size = 1
+    epochs = 2
+    batch_size = 2
     img_size = 224
     num_classes = 1000
 
@@ -51,14 +54,15 @@ if __name__ == "__main__":
     gamma = 0.1
 
     # data augmentation
-    saturation = 1.5
-    exposure = 1.5
-    hue = 0.1
+    brightness = 0.5
+    contrast = 0.5
+    saturation = 0.5
+    hue = 0.5
 
     # dataset and dataloader
     imagenet_dir = os.getenv("IMAGENET")
     assert imagenet_dir, "Must set imagenet root directory"
-    dataloader = data.build_imagenet_dataloader(imagenet_dir, img_size, batch_size)
+    dataloader = data.build_imagenet_dataloader(imagenet_dir, img_size, batch_size, brightness, contrast, saturation, hue)
 
     # device and model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -95,13 +99,13 @@ if __name__ == "__main__":
 
     # example
     for epoch in range(epochs):
-        for xbatch, ybatch in dataloader:
+        for (xbatch, ybatch) in tqdm(dataloader, desc=f"Training on epoch {epoch}"):
             ypred = pretrain_model(xbatch)
             loss = lossfn(ypred, ybatch)
             loss.backward()
             optim.step()
             lr_scheduler.step()
-            print("Loss: ", loss)
+            # print("Loss: ", loss)
 
         # if epoch % save_interval == 0:
         #     save_checkpoint(wandb.run.id, i, pretrain_model, optim, loss) # type: ignore
