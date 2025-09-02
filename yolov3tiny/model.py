@@ -11,11 +11,14 @@ class Convolution(torch.nn.Module):
         self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size, padding=padding, bias=False)
         self.batch_norm = torch.nn.BatchNorm2d(out_channels)
         self.leaky_relu = torch.nn.LeakyReLU(negative_slope)
+        self.dropout = torch.nn.Dropout2d(p=0.1)
 
     def forward(self, input):
         output = self.conv(input)
         output = self.batch_norm(output)
-        return self.leaky_relu(output)
+        output = self.leaky_relu(output)
+        output = self.dropout(output)
+        return output
 
 class LeftBottomPaddingMaxPool(torch.nn.Module):
     def __init__(self, padding:Tuple, fill:float, kernel_size:int, stride:int):
