@@ -4,6 +4,7 @@ from torchvision.transforms.functional import to_tensor
 from torchvision.datasets import CocoDetection
 
 from PIL import Image
+from torchvision.utils import pathlib
 
 def cxcywh_to_xyxy(bbox: torch.Tensor):
     bbox[..., 0] -= bbox[..., 2] / 2
@@ -17,7 +18,7 @@ def xywh_to_xyxy(bbox: torch.Tensor):
     bbox[..., 3] = bbox[..., 1] + bbox[..., 3]
     return bbox
 
-def get_names(names_from_paper:str, actual_names:str):
+def get_coco_names(names_from_paper:str, actual_names:str):
     """
     coco paper release 91 names, but the dataset only contains 80.
 
@@ -34,11 +35,36 @@ def get_names(names_from_paper:str, actual_names:str):
 
     return keys, indices
 
+def get_imagenet_names(path:str):
+    names = {}
+    with open(path, "r") as f:
+        for (i, line) in enumerate(f):
+            names[i] = line.split(" ")[1].strip(",\n")
+    return names
+
+
+class ToSquare:
+    def __init__(self, fill=127):
+        self.fill = fill
+
+    def __call__(self, image: torch.Tensor):
+        h, w = image.shape[-2:]
+        diff = abs(w - h)
+        pad1 = diff // 2
+        pad2 = diff - pad1
+        if w > h:
+            padding = (0, pad1, 0, pad2)
+        else:
+            padding = (pad1, 0, pad2, 0)
+        padded_image = torchvision.transforms.functional.pad(image, padding, self.fill) # type: ignore
+        return padded_image
+
 def prepare_for_pretraining(img_size, brightness, contrast, saturation, hue):
     transform = torchvision.transforms.Compose(
         [
             torchvision.transforms.ToTensor(),
             torchvision.transforms.ColorJitter(brightness, contrast, saturation, hue),
+            ToSquare(),
             torchvision.transforms.Resize((img_size, img_size)),
             torchvision.transforms.RandomHorizontalFlip(p=0.5),
             torchvision.transforms.RandomVerticalFlip(p=0.5),
@@ -204,7 +230,7 @@ class CocoBoundingBoxDataset(CocoDetection):
 def build_coco_dataloader(images_dir:str, annotations_dir:str, img_size:int, num_classes:int, max_num_boxes:int, batch_size:int, replacement:bool, transform):
     names_from_paper = "./data/coco-paper.names"
     actual_names = "./data/coco.names"
-    keys, _ = get_names(names_from_paper, actual_names)
+    keys, _ = get_coco_names(names_from_paper, actual_names)
     dataset = CocoBoundingBoxDataset(
         images=images_dir,
         annotations=annotations_dir,
@@ -242,4 +268,20 @@ def build_imagenet_dataloader(imagenet_dir:str, img_size:int, batch_size:int, br
     sampler = torch.utils.data.RandomSampler(imagenet_dataset, replacement=False)
     return torch.utils.data.DataLoader(
         imagenet_dataset, batch_size=batch_size, sampler=sampler, collate_fn=collage_imagenet_sample
+    )
+
+def build_pretraining_dataloader(path, split, img_size, batch_size, brightness, contrast, saturation, hue):
+    def collage_imagenet_sample(sample):
+        images, labels = [], []
+        for image, label in sample:
+            print(image.shape)
+            images.append(image)
+            labels.append(label)
+        return torch.stack(images, dim=0), torch.tensor(labels)
+    assert split == "train" or split == "val"
+    split_transform = prepare_for_pretraining(img_size, brightness, contrast, saturation, hue) if split == "train" else prepare_for_validation(img_size)
+    dataset = torchvision.datasets.ImageFolder(root=pathlib.Path(path)/split, transform=split_transform)
+    sampler = torch.utils.data.RandomSampler(dataset, replacement=False)
+    return torch.utils.data.DataLoader(
+        dataset, batch_size=batch_size, sampler=sampler, collate_fn=collage_imagenet_sample
     )
