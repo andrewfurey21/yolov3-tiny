@@ -8,7 +8,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 import wandb
-from tqdm import tqdm, trange
+from tqdm import trange
 
 CHECKPOINTS = "checkpoints"
 
@@ -27,7 +27,8 @@ def save_checkpoint(id:str, epoch:int, model:model.YOLOv3tinyPretrain, optimizer
 
 def get_latest_checkpoint(best_loss=False):
     """
-        get the latest checkpoint. if best_loss, get the checkpoint with best loss, else get the latest one (largest epoch)
+        get the latest checkpoint. if best_loss, get the checkpoint with best loss, else get the latest one (most recent epoch)
+        should be used to checkpoint weights once every epoch.
     """
     index = 3 if best_loss else 1
     files = {float(entry.name.split("_")[index]):entry.name for entry in os.scandir(f"./{CHECKPOINTS}/")}
@@ -61,9 +62,14 @@ if __name__ == "__main__":
     hue = 0.5
 
     # dataset and dataloader
-    names = data.get_imagenet_names("./data/LOC_synset_mapping.txt")
-    train_dataloader = data.build_pretraining_dataloader("./data/ILSVRC/Data/CLS-LOC", "train", img_size, batch_size, brightness, contrast, saturation, hue)
-    val_dataloader = data.build_pretraining_dataloader("./data/ILSVRC/Data/CLS-LOC", "val", img_size, batch_size, brightness, contrast, saturation, hue)
+    names_file = os.getenv("IMAGENET_NAMES")
+    assert names_file, "Need to specify where the imagenet names are stored"
+    names = data.get_imagenet_names(names_file)
+    train_dataloader = data.build_pretraining_dataloader(os.getenv("IMAGENET_TRAIN"), "train",
+                                                         img_size, batch_size,
+                                                         brightness, contrast, saturation, hue)
+    val_dataloader = data.build_pretraining_dataloader(os.getenv("IMAGENET_VAL"), "val",
+                                                         img_size, batch_size)
 
     # device and model
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -71,61 +77,60 @@ if __name__ == "__main__":
     pretrain_model.train()
 
     # optimizer + lr scheduler
-    optim = torch.optim.SGD(pretrain_model.parameters(), lr=lr, weight_decay=weight_decay, momentum=momentum, nesterov=nesterov) # TODO: set fused and capturable
+    optim = torch.optim.SGD(pretrain_model.parameters(), 
+                            lr=lr,
+                            weight_decay=weight_decay,
+                            momentum=momentum,
+                            nesterov=nesterov) # TODO: set fused and capturable
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optim, step_size=step_size, gamma=gamma)
 
-
     # loss
-    # lossfn = torch.nn.CrossEntropyLoss()
-    #
-    # # logging
-    # save_interval = 1000
-    # run_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    #
-    # pretraining_log = wandb.init(
-    #     entity=os.getenv("ENTITY"),
-    #     project=os.getenv("PROJECT"),
-    #     name=run_name,
-    #     config={
-    #         "epochs":epochs,
-    #         "batch size":batch_size,
-    #         "learning rate scheduler":lr_scheduler.__class__.__name__,
-    #         "optimizer":optim.__class__.__name__,
-    #         "device":device.__str__()
-    #     },
-    #     group="pretraining-imagenet",
-    #     mode="online",
-    # )
-    #
-    # if os.getenv("LOAD") != None:
-    #     best_loss = True if int(os.getenv("LOAD")) == 1 else False # type: ignore
-    #     checkpoint_file_name = get_latest_checkpoint(best_loss=best_loss)
-    #     load = f"Using weights from checkpoint: {checkpoint_file_name}"
-    #     # pretraining_log.notes += load
-    #     # pretraining_log.save();
-    #
-    #     pretrain_model.load_state_dict(torch.load(f"./{CHECKPOINTS}/{checkpoint_file_name}")["model"])
-    #
-    # # example
-    # xbatch, ybatch = next(iter(dataloader))
-    # # for epoch in [1]:
-    # for epoch in trange(epochs):
-    #     # for (xbatch, ybatch) in tqdm(dataloader, desc=f"Training on epoch {epoch}"):
-    #     ypred = pretrain_model(xbatch)
-    #     loss = lossfn(ypred, ybatch)
-    #     loss.backward()
-    #     optim.step()
-    #     lr_scheduler.step()
-    #     pretraining_log.log({f"batch_loss_{0}": loss.item()})
-    #
-    #     # calls torch.save. once every epoch, save weights.
-    #     # save_checkpoint(wandb.run.id, i, pretrain_model, optim, loss) # type: ignore
-    #     # validation, torch.no_grad
-    #     # pretraining_log.log({"val_loss": loss})
-    #     # top1 and top5
-    #     top1 = (ypred.argmax(dim=1) == ybatch).sum() / batch_size
-    #     top5 = (torch.topk(ypred, k=5, dim=1)[1] == ybatch.reshape(batch_size, 1)).max(dim=1)[0].float().sum() / batch_size
-    #     pretraining_log.log({f"top 1": top1})
-    #     pretraining_log.log({f"top 5": top5})
-    #
-    # pretraining_log.finish()
+    lossfn = torch.nn.CrossEntropyLoss()
+
+    # logging
+    save_interval = 1000
+    run_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+
+    pretraining_log = wandb.init(
+        entity=os.getenv("ENTITY"),
+        project=os.getenv("PROJECT"),
+        name=run_name,
+        config={
+            "epochs":epochs,
+            "batch size":batch_size,
+            "learning rate scheduler":lr_scheduler.__class__.__name__,
+            "optimizer":optim.__class__.__name__,
+            "device":device.__str__()
+        },
+        group="pretraining-imagenet",
+        mode="online",
+    )
+
+    if os.getenv("LOAD") != None:
+        best_loss = True if int(os.getenv("LOAD")) == 1 else False # type: ignore
+        checkpoint_file_name = get_latest_checkpoint(best_loss=best_loss)
+        load = f"Using weights from checkpoint: {checkpoint_file_name}"
+        pretrain_model.load_state_dict(torch.load(f"./{CHECKPOINTS}/{checkpoint_file_name}")["model"])
+
+    # example
+    xbatch, ybatch = next(iter(train_dataloader))
+    for epoch in trange(epochs):
+        # for (xbatch, ybatch) in tqdm(dataloader, desc=f"Training on epoch {epoch}"):
+        ypred = pretrain_model(xbatch)
+        loss = lossfn(ypred, ybatch)
+        loss.backward()
+        optim.step()
+        lr_scheduler.step()
+        pretraining_log.log({f"batch_loss_{0}": loss.item()})
+
+        # calls torch.save. once every epoch, save weights.
+        # save_checkpoint(wandb.run.id, i, pretrain_model, optim, loss) # type: ignore
+        # validation, torch.no_grad
+        # pretraining_log.log({"val_loss": loss})
+        # top1 and top5
+        top1 = (ypred.argmax(dim=1) == ybatch).sum() / batch_size
+        top5 = (torch.topk(ypred, k=5, dim=1)[1] == ybatch.reshape(batch_size, 1)).max(dim=1)[0].float().sum() / batch_size
+        pretraining_log.log({f"top 1": top1})
+        pretraining_log.log({f"top 5": top5})
+
+    pretraining_log.finish()

@@ -1,10 +1,8 @@
 import torch
 import torchvision
-from torchvision.transforms.functional import to_tensor
 from torchvision.datasets import CocoDetection
 
 from PIL import Image
-from torchvision.utils import pathlib
 
 def cxcywh_to_xyxy(bbox: torch.Tensor):
     bbox[..., 0] -= bbox[..., 2] / 2
@@ -34,52 +32,6 @@ def get_coco_names(names_from_paper:str, actual_names:str):
         indices = {i: name for i, name in enumerate(names)}
 
     return keys, indices
-
-def get_imagenet_names(path:str):
-    names = {}
-    with open(path, "r") as f:
-        for (i, line) in enumerate(f):
-            names[i] = line.split(" ")[1].strip(",\n")
-    return names
-
-
-class ToSquare:
-    def __init__(self, fill=127):
-        self.fill = fill
-
-    def __call__(self, image: torch.Tensor):
-        h, w = image.shape[-2:]
-        diff = abs(w - h)
-        pad1 = diff // 2
-        pad2 = diff - pad1
-        if w > h:
-            padding = (0, pad1, 0, pad2)
-        else:
-            padding = (pad1, 0, pad2, 0)
-        padded_image = torchvision.transforms.functional.pad(image, padding, self.fill) # type: ignore
-        return padded_image
-
-def prepare_for_pretraining(img_size, brightness, contrast, saturation, hue):
-    transform = torchvision.transforms.Compose(
-        [
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.ColorJitter(brightness, contrast, saturation, hue),
-            ToSquare(),
-            torchvision.transforms.Resize((img_size, img_size)),
-            torchvision.transforms.RandomHorizontalFlip(p=0.5),
-            torchvision.transforms.RandomVerticalFlip(p=0.5),
-        ]
-    )
-    return transform
-
-def prepare_for_validation(img_size):
-    transform = torchvision.transforms.Compose(
-        [
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Resize((img_size, img_size)),
-        ]
-    )
-    return transform
 
 class LabelCompose(torchvision.transforms.Compose):
     def __call__(self, image: Image.Image, label:torch.Tensor|None = None):
@@ -169,7 +121,7 @@ class LabelRandomVerticalFlip(torchvision.transforms.RandomVerticalFlip):
                 label[..., 3] = label[..., 1] + bbox_h
         return flipped_image, label
 
-def prepare_for_training(img_size:int):
+def prepare_for_coco_training(img_size:int):
     return LabelCompose(
         [
             LabelToTensor(),
@@ -249,7 +201,6 @@ def build_coco_dataloader(images_dir:str, annotations_dir:str, img_size:int, num
             sizes.append(size)
         return torch.stack(images), torch.stack(labels), torch.tensor(sizes)
 
-    # dataloading
     sampler = torch.utils.data.RandomSampler(dataset, replacement=replacement)
     dataloader = torch.utils.data.DataLoader(dataset,
                             batch_size=batch_size,
@@ -257,31 +208,3 @@ def build_coco_dataloader(images_dir:str, annotations_dir:str, img_size:int, num
                             collate_fn=collate_coco_sample)
     return dataloader
 
-def build_imagenet_dataloader(imagenet_dir:str, img_size:int, batch_size:int, brightness:float, contrast:float, saturation:float, hue:float):
-    def collage_imagenet_sample(sample):
-        images, labels = [], []
-        for image, label in sample:
-            images.append(image)
-            labels.append(label)
-        return torch.stack(images, dim=0), torch.tensor(labels)
-    imagenet_dataset = torchvision.datasets.ImageNet(imagenet_dir, split="val", transform=prepare_for_pretraining(img_size, brightness, contrast, saturation, hue))
-    sampler = torch.utils.data.RandomSampler(imagenet_dataset, replacement=False)
-    return torch.utils.data.DataLoader(
-        imagenet_dataset, batch_size=batch_size, sampler=sampler, collate_fn=collage_imagenet_sample
-    )
-
-def build_pretraining_dataloader(path, split, img_size, batch_size, brightness, contrast, saturation, hue):
-    def collage_imagenet_sample(sample):
-        images, labels = [], []
-        for image, label in sample:
-            print(image.shape)
-            images.append(image)
-            labels.append(label)
-        return torch.stack(images, dim=0), torch.tensor(labels)
-    assert split == "train" or split == "val"
-    split_transform = prepare_for_pretraining(img_size, brightness, contrast, saturation, hue) if split == "train" else prepare_for_validation(img_size)
-    dataset = torchvision.datasets.ImageFolder(root=pathlib.Path(path)/split, transform=split_transform)
-    sampler = torch.utils.data.RandomSampler(dataset, replacement=False)
-    return torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, sampler=sampler, collate_fn=collage_imagenet_sample
-    )
