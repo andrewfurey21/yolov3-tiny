@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 import wandb
 from tqdm import trange
 
-CHECKPOINTS = "checkpoints"
+CHECKPOINTS = "checkpoints" # weight checkpoints folder
 
 def display_image_tensor(image: torch.Tensor):
     pilimage = torchvision.transforms.functional.to_pil_image(image) # type: ignore
@@ -47,13 +47,13 @@ if __name__ == "__main__":
 
     # hyperparams
     epochs = 200
-    batch_size = 1 # 32 # 64
+    batch_size = 32 # 64
     img_size = 416
     num_classes = 1000
 
     # lr schedule (StepLR)
-    step_size = 10000
-    gamma = 0.9
+    step_size = 400_000
+    gamma = 0.2
 
     # data augmentation
     brightness = 0.5
@@ -61,18 +61,22 @@ if __name__ == "__main__":
     saturation = 0.5
     hue = 0.5
 
+    # set device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     # dataset and dataloader
     names_file = os.getenv("IMAGENET_NAMES")
-    assert names_file, "Need to specify where the imagenet names are stored"
+    assert names_file, "Need to specify where the imagenet names are stored."
+    imagenet_filepath = os.getenv("IMAGENET")
+    assert imagenet_filepath, "Need to specify where imagenet images are."
+
     names = data.get_imagenet_names(names_file)
-    train_dataloader = data.build_pretraining_dataloader(os.getenv("IMAGENET_TRAIN"), "train",
-                                                         img_size, batch_size,
+    train_dataloader = data.build_pretraining_dataloader(imagenet_filepath, "train",
+                                                         img_size, batch_size, device,
                                                          brightness, contrast, saturation, hue)
-    val_dataloader = data.build_pretraining_dataloader(os.getenv("IMAGENET_VAL"), "val",
-                                                         img_size, batch_size)
+    print("Created training dataloader.")
 
     # device and model
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     pretrain_model = model.YOLOv3tinyPretrain(num_classes).to(device)
     pretrain_model.train()
 
@@ -88,7 +92,6 @@ if __name__ == "__main__":
     lossfn = torch.nn.CrossEntropyLoss()
 
     # logging
-    save_interval = 1000
     run_name = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
     pretraining_log = wandb.init(

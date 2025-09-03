@@ -52,17 +52,20 @@ def prepare_for_imagenet_validation(img_size):
     )
     return transform
 
-def collage_imagenet_sample(sample):
-    images, labels = [], []
-    for image, label in sample:
-        images.append(image)
-        labels.append(label)
-    return torch.stack(images, dim=0), torch.tensor(labels)
+def collate_imagenet(device:torch.device):
+    def collate_fn(sample):
+        images, labels = [], []
+        for image, label in sample:
+            images.append(image)
+            labels.append(label)
+        return torch.stack(images, dim=0).to(device), torch.tensor(labels).to(device)
+    return collate_fn
 
 def build_pretraining_dataloader(path,
                                  split,
                                  img_size,
                                  batch_size,
+                                 device,
                                  brightness:float=0,
                                  contrast:float=0,
                                  saturation:float=0,
@@ -76,6 +79,6 @@ def build_pretraining_dataloader(path,
     dataset = torchvision.datasets.ImageFolder(root=pathlib.Path(path)/split, transform=transform)
     sampler = torch.utils.data.RandomSampler(dataset, replacement=False)
     return torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, sampler=sampler, collate_fn=collage_imagenet_sample
+        dataset, batch_size=batch_size, sampler=sampler, collate_fn=collate_imagenet(device)
     )
 
