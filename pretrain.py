@@ -1,7 +1,6 @@
 import torch
 import torch.profiler
 import torchvision
-from torchvision.datasets import imagenet
 
 from yolov3tiny import model, data
 
@@ -115,9 +114,9 @@ if __name__ == "__main__":
         with_stack=True
     )
 
-    # prefetcher = data.DataPrefetcher(train_dataloader)
     step = 0
     for (xbatch, ybatch) in train_dataloader:
+    # for (xbatch, ybatch) in train_dataloader:
     # for (xbatch, ybatch) in tqdm(train_dataloader, desc=f"Training on epoch {0}"):
     # for (step, (xbatch, ybatch)) in tqdm(enumerate((train_dataloader)), desc="training..."):
         x = xbatch.to(device, non_blocking=True)

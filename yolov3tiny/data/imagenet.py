@@ -4,6 +4,10 @@ import torchvision
 import numpy as np
 
 import pathlib
+import lmdb
+import pickle
+
+import tqdm
 
 def get_imagenet_names(path:str):
     """
@@ -20,7 +24,6 @@ class ToSquare:
         self.fill = fill
 
     def __call__(self, image: torch.Tensor):
-        print("to square")
         h, w = image.shape[-2:]
         diff = abs(w - h)
         pad1 = diff // 2
@@ -33,7 +36,6 @@ class ToSquare:
         return padded_image
 
 def prepare_for_imagenet_training(img_size, brightness, contrast, saturation, hue):
-    print("transforming...")
     transform = torchvision.transforms.Compose(
         [
             # torchvision.transforms.ToTensor(),
@@ -96,7 +98,8 @@ def collate_imagenet(samples):
     for i, image in enumerate(images):
         npimg = np.asarray(image)
         npimg = np.rollaxis(npimg, 2)
-        tensor[i] = torch.from_numpy(npimg)
+        npimg = torch.from_numpy(npimg.copy())
+        tensor[i] = npimg; del npimg
     return tensor, labels
 
 def build_pretraining_dataloader(path,
@@ -115,7 +118,31 @@ def build_pretraining_dataloader(path,
 
     dataset = torchvision.datasets.ImageFolder(root=pathlib.Path(path)/split, transform=transform)
     sampler = torch.utils.data.RandomSampler(dataset, replacement=False)
+    # return spdl.dataloader.get_pytorch_dataloader(
     return torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, sampler=sampler, collate_fn=collate_imagenet, num_workers=2
+        dataset=dataset, batch_size=batch_size, sampler=sampler, collate_fn=collate_imagenet, num_workers=2
     )
+
+def convert_to_lmdb(dataset:torch.utils.data.Dataset, split:str, save_to:str, write_freq=5000, num_workers=16):
+    dataloader = torch.utils.data.DataLoader(dataset, num_workers=num_workers, collate_fn=collate_imagenet)
+
+    # print(pathlib.Path(save_to)/(split + ".lmdb"))
+    db = lmdb.open(path=save_to, map_size=1099511627776 * 2, readonly=False, meminit=False, map_async=True)
+    transaction = db.begin(write=True)
+    dl = iter(dataloader)
+    for i in tqdm.trange(len(dl), desc="Building LMDB database..."):
+        image, label = next(dl)
+        transaction.put(f"{i}".encode("ascii"), pickle.dumps((image, label)))
+        if i % write_freq == 0:
+            transaction.commit()
+            transaction = db.begin(write=True)
+    transaction.commit()
+    keys = [f"{k}".encode("ascii") for k in range(i + 1)] # type: ignore
+    with db.begin(write=True) as transaction:
+        transaction.put(b"__keys__", pickle.dumps(keys))
+        transaction.put(b"__len__", pickle.dumps(len(keys)))
+    db.sync()
+    db.close()
+    
+    
 
