@@ -1,9 +1,7 @@
-data/annotations/*
-data/val2017/*
-data/*
 **/.mypy_cache/*
 .env
 **/wandb/*
 **/__pycache__/*
 extra/*
 checkpoints/*
+log/*
