@@ -4,14 +4,14 @@ from typing import List, Tuple
 from yolov3tiny.data import cxcywh_to_xyxy
 
 class Convolution(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, negative_slope=0.1):
+    def __init__(self, in_channels, out_channels, kernel_size, negative_slope=0.1, dropoutp=0.2):
         assert kernel_size == 1 or kernel_size == 3
         super().__init__()
         padding = 1 if kernel_size == 3 else 0
         self.conv = torch.nn.Conv2d(in_channels, out_channels, kernel_size, padding=padding, bias=False)
         self.batch_norm = torch.nn.BatchNorm2d(out_channels)
         self.leaky_relu = torch.nn.LeakyReLU(negative_slope)
-        self.dropout = torch.nn.Dropout2d(p=0.1)
+        self.dropout = torch.nn.Dropout2d(p=dropoutp) # Pretty sure original wasn't trained with dropout
 
     def forward(self, input):
         output = self.conv(input)
@@ -20,7 +20,7 @@ class Convolution(torch.nn.Module):
         output = self.dropout(output)
         return output
 
-class LeftBottomPaddingMaxPool(torch.nn.Module):
+class PaddingMaxPool(torch.nn.Module):
     def __init__(self, padding:Tuple, fill:float, kernel_size:int, stride:int):
         super().__init__()
         self.pad = torch.nn.ConstantPad2d(padding, fill)
@@ -44,7 +44,7 @@ class YOLOLayer(torch.nn.Module):
         assert width == height
         grid_size = width
 
-        assert self.img_size % grid_size == 0
+        assert self.img_size % grid_size == 0 # TODO: is this really necessary?
         stride = self.img_size // grid_size
 
         assert channels == self.num_attributes * 3
@@ -69,7 +69,8 @@ class YOLOLayer(torch.nn.Module):
         bbox = torch.stack([x_pred, y_pred, w_pred, h_pred], dim=4)
         bbox = cxcywh_to_xyxy(bbox)
 
-        return torch.cat([bbox, input[..., 4:]], dim=4).reshape(batch_size, -1, self.num_attributes)
+        probs = torch.sigmoid(input[..., 4:])
+        return torch.cat([bbox, probs], dim=4).reshape(batch_size, -1, self.num_attributes)
 
 class YOLOv3tiny(torch.nn.Module):
     def __init__(self, num_classes:int, anchors:List[Tuple[int, int]], img_size:int):
@@ -84,7 +85,7 @@ class YOLOv3tiny(torch.nn.Module):
         self.conv_layer_8 = Convolution(128, 256, 3)
         self.conv_layer_10 = Convolution(256, 512, 3)
 
-        self.maxpool_11 = LeftBottomPaddingMaxPool((0, 1, 0, 1), float('-inf'), 2, 1)
+        self.maxpool_11 = PaddingMaxPool((0, 1, 0, 1), float('-inf'), 2, 1)
         self.conv_layer_12 = Convolution(512, 1024, 3)
 
         self.conv_layer_13 = Convolution(1024, 256, 1)
@@ -146,7 +147,7 @@ class YOLOv3tinyPretrain(torch.nn.Module):
         self.conv_layer_8 = Convolution(128, 256, 3)
         self.conv_layer_10 = Convolution(256, 512, 3)
 
-        self.maxpool_11 = LeftBottomPaddingMaxPool((0, 1, 0, 1), float('-inf'), 2, 1)
+        self.maxpool_11 = PaddingMaxPool((0, 1, 0, 1), float('-inf'), 2, 1)
         self.conv_layer_12 = Convolution(512, 1024, 3)
 
         self.conv_layer_13 = Convolution(1024, 256, 1)
